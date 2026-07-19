@@ -44,7 +44,8 @@ jobs:
 
       - name: Download CISA KEV catalogue
         run: |
-          curl -s -o kev.json https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json
+          curl --fail --show-error --location --retry 3 -o kev.json https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json
+          jq -e '.vulnerabilities | type == "array" and length > 1000' kev.json >/dev/null
           echo "KEV catalogue downloaded: $(jq '.count' kev.json) entries"
 
       - name: Fetch latest promoted release and re-scan
@@ -92,9 +93,20 @@ jobs:
             exit 0
           fi
 
+          WAIVER_EXPIRED=false
+          mkdir -p "waiver-$VERSION"
+          if gh release download "$LATEST_TAG" --repo "${{ github.repository }}" \
+               --pattern waiver.json --dir "waiver-$VERSION" 2>/dev/null; then
+            WAIVER_EXPIRY=$(jq -er '.expires_on' "waiver-$VERSION/waiver.json")
+            if [ "$(date -u -d "$WAIVER_EXPIRY" +%s 2>/dev/null || echo 0)" -le "$(date -u +%s)" ]; then
+              WAIVER_EXPIRED=true
+            fi
+          fi
+
           echo "--- Re-scanning latest promoted image n8n-trusted:$VERSION ---"
 
           IMAGE="ghcr.io/${{ github.repository }}/n8n-trusted:$VERSION"
+          RUNNER_IMAGE="ghcr.io/${{ github.repository }}/n8n-runners-trusted:$VERSION"
           if ! docker pull "$IMAGE" > /dev/null 2>&1; then
             echo "  ⚠️  Could not pull $IMAGE — skipping"
             echo "| $VERSION | — | — | — | — | — | ⚠️ Skipped |" >> $GITHUB_STEP_SUMMARY
@@ -104,6 +116,10 @@ jobs:
             echo "EOF" >> $GITHUB_OUTPUT
             exit 0
           fi
+          if ! docker pull "$RUNNER_IMAGE" > /dev/null 2>&1; then
+            echo "Could not pull required promoted runner $RUNNER_IMAGE; failing closed."
+            exit 1
+          fi
 
           # Full image scan — same method as image-promotion for consistent results
           trivy image \
@@ -111,6 +127,8 @@ jobs:
             --output "rescan-$VERSION.raw.json" \
             --severity CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN \
             "$IMAGE" || true
+          trivy image --format json --output "rescan-$VERSION.runner.json" \
+            --severity CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN "$RUNNER_IMAGE"
 
           trivy image \
             --format sarif \
@@ -131,6 +149,15 @@ jobs:
             "tracee-$VERSION/tracee-events.jsonl" \
             "$(cat "tracee-$VERSION/target-container-id.txt")" \
             "rescan-$VERSION.tracee.json"
+          jq '(.Results[]? | .Target) |= ("n8n-runners:" + .) |
+              (.Results[]?.Vulnerabilities[]? | .Reachable)=null |
+              (.Results[]?.Vulnerabilities[]? | .Reachability)="Unknown" |
+              (.Results[]?.Vulnerabilities[]? | .ReachabilityEvidence)=[]' \
+              "rescan-$VERSION.runner.json" > "rescan-$VERSION.runner.annotated.json"
+          jq -s '.[0].Results += (.[1].Results // []) | .[0]' \
+              "rescan-$VERSION.tracee.json" "rescan-$VERSION.runner.annotated.json" \
+              > "rescan-$VERSION.combined.json"
+          mv "rescan-$VERSION.combined.json" "rescan-$VERSION.tracee.json"
           python3 .github/scripts/enrich_findings.py "rescan-$VERSION.tracee.json" kev.json "rescan-$VERSION.json"
 
           # Count findings by severity
@@ -146,7 +173,7 @@ jobs:
           UNKNOWN_AGE_REVIEW_COUNT=$(jq -r '.AnalysisSummary.unknown_age_critical_high_count // 0' "rescan-$VERSION.json")
 
           # Overview table row
-          if [ "$MANUAL_REVIEW_COUNT" -gt 0 ]; then
+          if [ "$MANUAL_REVIEW_COUNT" -gt 0 ] || [ "$WAIVER_EXPIRED" = true ]; then
             STATUS="🟠 Manual Review"
           elif [ "$AUTO_ELIGIBLE_COUNT" -gt 0 ]; then
             STATUS="✅ Auto Eligible"
@@ -170,6 +197,7 @@ jobs:
             [ "$KEV_REVIEW_COUNT" -gt 0 ] && ALERT_BODY="$ALERT_BODY- 🚨 **$KEV_REVIEW_COUNT** critical/high CVE(s) now match KEV\n"
             [ "$EPSS_REVIEW_COUNT" -gt 0 ] && ALERT_BODY="$ALERT_BODY- 📈 **$EPSS_REVIEW_COUNT** critical/high CVE(s) are now EPSS HIGH/CRITICAL\n"
             [ "$UNKNOWN_AGE_REVIEW_COUNT" -gt 0 ] && ALERT_BODY="$ALERT_BODY- ❓ **$UNKNOWN_AGE_REVIEW_COUNT** critical/high CVE(s) have unknown published dates\n"
+            [ "$WAIVER_EXPIRED" = true ] && ALERT_BODY="$ALERT_BODY- ⌛ The attached promotion waiver has expired\n"
             echo "  ⚠️  Alert triggered for $VERSION"
           else
             echo "  ✅ $VERSION remains auto-eligible"

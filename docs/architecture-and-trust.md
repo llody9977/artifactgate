@@ -12,7 +12,7 @@ The example image is `n8nio/n8n`, but the architecture is meant to illustrate a 
 | :--- | :--- | :--- |
 | Dependency chain abuse | A trusted vendor image can still introduce risky or newly vulnerable components | digest pinning, Trivy scan, KEV/EPSS/age enrichment |
 | Artifact substitution or tag drift | A mutable upstream tag can change without notice | resolve and pin immutable digest before promotion |
-| Prohibitive licenses | Vendor images may introduce strict copyleft licenses | Trivy license scanning blocking promotion |
+| Prohibitive licenses | Vendor images may introduce strict copyleft licenses | Trivy licence reporting for human review |
 | Runtime misconfigurations | Static scans miss exposed runtime HTTP flaws | OWASP ZAP baseline DAST during smoke run |
 | IaC and script weaknesses | Deployment files can undermine otherwise good image controls | Checkov and Shellcheck in CI |
 | Insufficient flow control | Higher-risk images should not move through the same path as cleaner ones | manual approval via `trusted-promotion` |
@@ -27,7 +27,7 @@ The example image is `n8nio/n8n`, but the architecture is meant to illustrate a 
 flowchart TD
     subgraph Intake["1. Secure Intake"]
         A["Manual promotion request or weekly version check"] --> B["Allowlist and semver policy"]
-        B --> C["Resolve immutable digest"]
+        B --> C["Resolve application and runner digests"]
     end
 
     subgraph Analysis["2. Risk Enrichment"]
@@ -44,7 +44,7 @@ flowchart TD
     end
 
     subgraph Trust["4. Provenance and Release"]
-        H --> J["Push trusted image to GHCR"]
+        H --> J["Push trusted image pair to GHCR"]
         I --> J
         J --> K["Attest provenance and SBOM"]
         K --> L["Create GitHub release with rollback metadata"]
@@ -62,7 +62,8 @@ Current trust model:
 
 - GHCR authentication uses the repository-scoped ephemeral `GITHUB_TOKEN`
 - attestation flows use GitHub Actions OIDC with `id-token: write`
-- build provenance and SBOM attestations are attached to the promoted image
+- build provenance and SBOM attestations are attached independently to both promoted images
+- maintainer commits and tags use the same local SSH signing identity as VulnSignal; this personal key is not stored in Actions
 - workflows are pinned to immutable action SHAs
 
 In practical terms, the promotion path avoids a long-lived registry password or PAT for normal publish operations and treats the GitHub Actions workflow as the controlled promotion environment for this repository.

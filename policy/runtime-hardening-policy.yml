@@ -1,4 +1,4 @@
-# Runtime Hardening Policy — CIS Docker Benchmark v1.6.0
+# Runtime Hardening Policy — selected CIS Docker Benchmark recommendations
 # Defines required container runtime security controls.
 # Changes require a Pull Request for auditability.
 #
@@ -8,7 +8,8 @@
 # Applies to:  iac/n8n/docker-compose.yml
 #
 # Checked by:  .github/workflows/ci.yml (CIS Compliance Check step)
-# Enforcement: automated checks alert and block CI on non-compliance.
+# This is a project hardening profile, not a CIS certification or complete audit.
+# Enforcement parses the fully rendered Compose model and checks each service.
 
 cis_docker_benchmark:
   version: "1.6.0"
@@ -108,7 +109,7 @@ controls:
     status: COMPLIANT
     enforcement: automated
     check: "restart is on-failure:N (not always, not unless-stopped)"
-    implementation: "restart: on-failure:5"
+    implementation: "restart: on-failure:5 on both services"
 
   - id: "5.15"
     title: "Ensure the host's process namespace is not shared"

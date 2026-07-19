@@ -5,10 +5,11 @@
 # Read by: .github/workflows/image-promotion.yml (Enforce Source Allowlist step)
 
 # ─── ALLOWLIST ───────────────────────────────────────────────────────────────
-# Only images from this exact upstream source are permitted.
+# Only the matching application and external-runner sources are permitted.
 # Any other source MUST be explicitly added here via PR.
 allowlist:
   source_image: "n8nio/n8n"
+  runner_image: "n8nio/runners"
 
   # Tags must be strict semver (x.y.z).
   # Moving targets (latest, stable, nightly) are resolved to a semver first —
@@ -34,5 +35,5 @@ vendor_signature:
       - Strict semver tag enforcement (no moving targets)
       - Immutable SHA256 digest pinning throughout the pipeline
     This gap is logged in vendor-sig-check.txt in every scan report artifact.
-    Accepted by: platform security team
-    Review by: 2025-Q4
+    Accepted by: repository owner
+    Review by: 2026-09-30

@@ -157,11 +157,15 @@ def main():
             package_name = vuln.get("PkgName", "")
             candidates = package_paths.get(package_name, set())
             evidence = sorted(path for path in candidates if path in observed_paths)
-            reachable = bool(evidence)
-            if reachable:
+            reachable = True if evidence else (False if candidates and matched_events > 0 else None)
+            if reachable is True:
                 reachable_count += 1
             vuln["Reachable"] = reachable
-            vuln["Reachability"] = "Yes" if reachable else "No"
+            vuln["Reachability"] = (
+                "Observed" if reachable is True
+                else "Not observed" if reachable is False
+                else "Unknown"
+            )
             vuln["ReachabilityEvidence"] = evidence[:5]
 
     report["ReachabilitySummary"] = {
@@ -169,6 +173,7 @@ def main():
         "observed_paths_count": len(observed_paths),
         "matched_event_count": matched_events,
         "reachable_vulnerability_count": reachable_count,
+        "limitations": "A negative result means only that mapped package files were not observed during this smoke test; it does not prove code is unreachable.",
         "target_container_id": target_container_id[:12],
     }
 

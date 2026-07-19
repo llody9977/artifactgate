@@ -27,12 +27,12 @@ Age adds a tolerance-window signal. A fresh issue and a long-standing unresolved
 
 ### Tracee Reachability
 
-Tracee contributes runtime context by showing whether relevant files or packages appear to be exercised during a smoke run.
+Tracee contributes bounded runtime context by showing whether mapped package files were observed during a smoke run. “Not observed” does not prove that vulnerable code is unreachable.
 
 Current status:
 
 - reachability is reported as analyst context
-- it is used to relax some low-risk unknown-age findings
+- missing collection or mapping is represented as unknown and fails closed for critical/high findings
 - it is not the sole approval signal
 
 ## Gate Policy
@@ -44,11 +44,13 @@ For `CRITICAL` and `HIGH` findings:
 | `CRITICAL` / `HIGH` | Yes | Any | Any | Any | Manual review |
 | `CRITICAL` / `HIGH` | No | Above repo threshold | Any | Any | Manual review |
 | `CRITICAL` / `HIGH` | No | Below repo threshold | At least 30 days | Any | Manual review |
-| `CRITICAL` / `HIGH` | No | Low | Unknown | No | Auto-allowed |
+| `CRITICAL` / `HIGH` | No | Unknown | Any | Any | Manual review |
+| `CRITICAL` / `HIGH` | No | Low | Unknown | Any | Manual review |
+| `CRITICAL` / `HIGH` | No | Low | Any | Unknown | Manual review |
 | `CRITICAL` / `HIGH` | No | Below threshold | Under 30 days | Any | Auto-allowed |
 | `MEDIUM` / `LOW` / `UNKNOWN` | No | Any | Any | Any | Reported, but does not directly trigger manual approval |
 
-The special-case rule above reflects the current repo behavior: unknown-age findings do not require manual review when they are also low-EPSS, not in KEV, and not reachable.
+Unknown evidence is not converted to a zero score or a negative reachability claim. Critical/high findings require manual review whenever age, EPSS or required runtime evidence is unavailable.
 
 ## EPSS Policy Bands
 
@@ -65,7 +67,7 @@ These are repository policy bands, not official EPSS categories.
 
 These controls are not part of the CVE enrichment logic. They are direct blocking checks.
 
-- `Prohibitive licenses`: Trivy license scan can block promotion
+- `Licence findings`: Trivy reports licence findings for review; the repository does not claim that scanner severity alone establishes legal compatibility
 - `Malware`: ClamAV blocks promotion if malware is detected
 - `Secrets`: Trivy secret scanning blocks promotion
 - `Policy violations`: disallowed source image or non-semver intake is rejected before promotion
@@ -78,5 +80,5 @@ Suggested operating model:
 
 1. identify whether the trigger is KEV, EPSS, CVE age, or a combination
 2. evaluate whether a newer upstream version is acceptable
-3. document the exception if no acceptable replacement exists
+3. document accepted CVEs, justification, compensating controls and a future expiry in the workflow waiver fields
 4. revise deployment plans if the promoted image should be replaced quickly

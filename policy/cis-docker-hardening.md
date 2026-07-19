@@ -1,4 +1,4 @@
-# CIS Docker Benchmark v1.6.0 — Automated Compliance Checks
+# Selected CIS Docker Benchmark recommendations — automated hardening checks
 
 **Benchmark**: CIS Docker Benchmark **v1.6.0** (2023-09-29)
 **Source**: https://www.cisecurity.org/benchmark/docker
@@ -11,7 +11,7 @@
 
 ## How the Check Works
 
-The `CIS Docker Benchmark v1.6.0 Compliance Check` job in `ci.yml`:
+The `Container Hardening Profile Check` job in `ci.yml` parses the rendered Compose model service by service. This is a project hardening profile, not a complete CIS audit or certification. It:
 - Parses `iac/n8n/docker-compose.yml` using shell text matching
 - Evaluates each automated control below
 - Prints `✅ PASS` or `❌ FAIL` per control ID
@@ -74,5 +74,5 @@ Add or correct the relevant setting in `iac/n8n/docker-compose.yml`, commit, and
 To add, change, or accept-a-risk on a control:
 
 1. Edit [`policy/runtime-hardening-policy.yml`](runtime-hardening-policy.yml) — update the control's `status` or `enforcement` field
-2. If adding a new automated check, add the corresponding shell check to the `CIS Docker Benchmark v1.6.0 Compliance Check` job in `.github/workflows/ci.yml`
+2. If adding a new automated check, add it to `.github/scripts/validate_compose.py` with positive and negative test coverage.
 3. Open a Pull Request — all policy changes are auditable in git history

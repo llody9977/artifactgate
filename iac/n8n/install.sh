@@ -77,13 +77,11 @@ get_docker_host_platform() {
 }
 
 pull_runner_image_for_host() {
-    local version="$1"
+    local runner_ref="$1"
     local host_platform="$2"
-    local runner_image="n8nio/runners:${version}"
 
     echo "Refreshing task runner image for host platform ${host_platform}..."
-    docker image rm -f "$runner_image" >/dev/null 2>&1 || true
-    docker pull --platform "$host_platform" "$runner_image" >/dev/null
+    docker pull --platform "$host_platform" "$runner_ref" >/dev/null
 }
 
 tag_local_release_image() {
@@ -114,19 +112,21 @@ fi
 REPO_OWNER="${REPO_SLUG%%/*}"
 REPO_NAME="${REPO_SLUG##*/}"
 GHCR_IMAGE="ghcr.io/${REPO_OWNER}/${REPO_NAME}/n8n-trusted"
+GHCR_RUNNER_IMAGE="ghcr.io/${REPO_OWNER}/${REPO_NAME}/n8n-runners-trusted"
 RELEASES_URL="https://github.com/${REPO_SLUG}/releases"
 
 # ─── FLAGS ──────────────────────────────────────────────────────────────────
-# Pass --skip-verify to bypass provenance verification (for automation)
-SKIP_ATTESTATION=false
+# Insecure lab mode is explicit; production defaults fail closed.
+INSECURE_LAB_MODE=false
 for arg in "$@"; do
   case $arg in
-    --skip-verify) SKIP_ATTESTATION=true ;;
+    --insecure-lab-mode) INSECURE_LAB_MODE=true ;;
+    *) echo "Unknown option: $arg"; exit 2 ;;
   esac
 done
 
 echo "============================================="
-echo "        n8n Secure Deployment Setup         "
+echo "         ArtifactGate n8n Setup             "
 echo "============================================="
 echo ""
 
@@ -137,14 +137,17 @@ if ! command -v docker &> /dev/null; then
 fi
 
 # ─── DETECT HOST IP ─────────────────────────────────────────────────────────
-DETECTED_IP=$(ip -4 route get 8.8.8.8 2>/dev/null | awk '{print $7}' | tr -d '\n')
-[ -z "$DETECTED_IP" ] && DETECTED_IP="127.0.0.1"
+DETECTED_IP="127.0.0.1"
 
 echo "The HOST_IP is required for n8n Webhook integrations."
 echo "Detected your Host IP as: $DETECTED_IP"
 echo ""
 read -p "Enter your Host IP address (or press Enter to use $DETECTED_IP): " USER_IP
 FINAL_IP=${USER_IP:-$DETECTED_IP}
+if ! [[ "$FINAL_IP" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$|^[a-zA-Z0-9._:-]+$ ]]; then
+    echo "❌ Invalid host address."
+    exit 1
+fi
 echo "✅ Using HOST_IP: $FINAL_IP"
 
 # ─── CHOOSE VERSION ─────────────────────────────────────────────────────────
@@ -164,6 +167,10 @@ if [ -z "$USER_VERSION" ] || [ "$USER_VERSION" = "latest" ]; then
     fi
 fi
 N8N_VERSION="$USER_VERSION"
+if ! [[ "$N8N_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "❌ Version must use x.y.z format."
+    exit 1
+fi
 RELEASE_TAG="n8n-${N8N_VERSION}"
 
 # ─── RESOURCE LIMITS ────────────────────────────────────────────────────────
@@ -183,6 +190,12 @@ CPU_LIMIT=${INPUT_CPU:-1.0}
 
 read -p "Max processes (pids_limit) [default: 200]: " INPUT_PIDS
 PIDS_LIMIT=${INPUT_PIDS:-200}
+if ! [[ "$MEM_LIMIT" =~ ^[0-9]+([.][0-9]+)?[kKmMgG]?$ ]] || \
+   ! [[ "$CPU_LIMIT" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
+   ! [[ "$PIDS_LIMIT" =~ ^[1-9][0-9]*$ ]]; then
+    echo "❌ Invalid resource limit."
+    exit 1
+fi
 
 echo ""
 echo "✅ Resource limits: memory=${MEM_LIMIT}, cpus=${CPU_LIMIT}, pids=${PIDS_LIMIT}"
@@ -194,24 +207,17 @@ echo "🔍 Fetching digest for n8n-trusted:${N8N_VERSION} from GitHub Release...
 echo "---------------------------------------------"
 
 GHCR_DIGEST=""
+RUNNER_GHCR_DIGEST=""
 if command -v gh &> /dev/null && gh auth status &> /dev/null 2>&1; then
     RELEASE_BODY=$(gh release view "$RELEASE_TAG" --repo "$REPO_SLUG" --json body -q '.body' 2>/dev/null || echo "")
-    GHCR_DIGEST=$(printf '%s\n' "$RELEASE_BODY" | grep -Eo 'sha256:[[:xdigit:]]{64}' | head -1)
+    GHCR_DIGEST=$(printf '%s\n' "$RELEASE_BODY" | sed -nE 's/.*n8n digest: `?(sha256:[[:xdigit:]]{64}).*/\1/p' | head -1)
+    RUNNER_GHCR_DIGEST=$(printf '%s\n' "$RELEASE_BODY" | sed -nE 's/.*runner digest: `?(sha256:[[:xdigit:]]{64}).*/\1/p' | head -1)
 fi
 
-if [ -z "$GHCR_DIGEST" ]; then
+if [ -z "$GHCR_DIGEST" ] || [ -z "$RUNNER_GHCR_DIGEST" ]; then
     echo "⚠️  Could not fetch digest from GitHub Release."
-    read -p "   Enter the GHCR digest manually (sha256:...), or press Enter to use version tag: " MANUAL_DIGEST
-    if [ -n "$MANUAL_DIGEST" ]; then
-        # Prepend sha256: if the user provided only the hex hash
-        if [[ "$MANUAL_DIGEST" =~ ^[a-fA-F0-9]{64}$ ]]; then
-            GHCR_DIGEST="sha256:$MANUAL_DIGEST"
-        else
-            GHCR_DIGEST="$MANUAL_DIGEST"
-        fi
-    else
-        echo "   ⚠️  Falling back to version tag (less secure — digest not pinned)."
-    fi
+    echo "❌ Both promoted image digests are required. Deployment aborted."
+    exit 1
 else
     echo "✅ GHCR digest: $GHCR_DIGEST"
 fi
@@ -222,19 +228,14 @@ echo "---------------------------------------------"
 echo "🔐 Verifying Cryptographic Provenance..."
 echo "---------------------------------------------"
 
-if [ "$SKIP_ATTESTATION" = true ]; then
-    echo "   ⚠️  --skip-verify flag set. Skipping attestation verification."
+if [ "$INSECURE_LAB_MODE" = true ]; then
+    echo "   ⚠️  INSECURE LAB MODE: provenance verification is disabled."
 elif ! command -v gh &> /dev/null || ! gh auth status &> /dev/null 2>&1; then
     echo ""
     echo "⚠️  Provenance verification requires the GitHub CLI (gh) and authentication."
     echo "   Install: https://github.com/cli/cli#installation"
-    read -p "   Skip verification and continue anyway? (Y/n): " SKIP_CONFIRM
-    SKIP_CONFIRM=${SKIP_CONFIRM:-Y}
-    if [[ "$SKIP_CONFIRM" =~ ^[Nn]$ ]]; then
-        echo "Aborted. Please install and authenticate the GitHub CLI first."
-        exit 1
-    fi
-    echo "   ⚠️  Skipping provenance verification."
+    echo "❌ Deployment aborted. Install and authenticate GitHub CLI, or use --insecure-lab-mode for an isolated lab only."
+    exit 1
 else
     if [ -n "$GHCR_DIGEST" ]; then
         VERIFY_SUBJECT="oci://${GHCR_IMAGE}@${GHCR_DIGEST}"
@@ -244,7 +245,8 @@ else
         echo "⚠️  No digest available — verifying by tag (weaker guarantee)"
     fi
 
-    if gh attestation verify "$VERIFY_SUBJECT" -o "$REPO_OWNER"; then
+    if gh attestation verify "$VERIFY_SUBJECT" -o "$REPO_OWNER" && \
+       gh attestation verify "oci://${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" -o "$REPO_OWNER"; then
         echo "✅ Provenance verified — image cryptographically bound to this pipeline."
     else
         echo ""
@@ -262,6 +264,7 @@ N8N_CONTAINER_PORT="$(get_kv_value "$ENV_FILE" "N8N_CONTAINER_PORT")"
 N8N_RUNNERS_BROKER_PORT="$(get_kv_value "$ENV_FILE" "N8N_RUNNERS_BROKER_PORT")"
 N8N_RUNNERS_AUTO_SHUTDOWN_TIMEOUT="$(get_kv_value "$ENV_FILE" "N8N_RUNNERS_AUTO_SHUTDOWN_TIMEOUT")"
 N8N_RUNNERS_AUTH_TOKEN="$(get_kv_value "$ENV_FILE" "N8N_RUNNERS_AUTH_TOKEN")"
+PUBLIC_BASE_URL="$(get_kv_value "$ENV_FILE" "PUBLIC_BASE_URL")"
 
 if [ ! -f "$ENV_FILE" ]; then
     echo ""
@@ -277,6 +280,13 @@ N8N_HOST_PORT=${N8N_HOST_PORT:-5678}
 N8N_CONTAINER_PORT=${N8N_CONTAINER_PORT:-5678}
 N8N_RUNNERS_BROKER_PORT=${N8N_RUNNERS_BROKER_PORT:-5679}
 N8N_RUNNERS_AUTO_SHUTDOWN_TIMEOUT=${N8N_RUNNERS_AUTO_SHUTDOWN_TIMEOUT:-15}
+PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-https://n8n.example.com/}
+read -r -p "Public HTTPS URL [${PUBLIC_BASE_URL}]: " INPUT_PUBLIC_BASE_URL
+PUBLIC_BASE_URL=${INPUT_PUBLIC_BASE_URL:-$PUBLIC_BASE_URL}
+if ! [[ "$PUBLIC_BASE_URL" =~ ^https://[A-Za-z0-9._:-]+/.*$ ]]; then
+    echo "❌ PUBLIC_BASE_URL must be an https:// URL ending in or containing a path slash."
+    exit 1
+fi
 if [ -z "$N8N_RUNNERS_AUTH_TOKEN" ] || [ "$N8N_RUNNERS_AUTH_TOKEN" = "<random_secure_token>" ]; then
     N8N_RUNNERS_AUTH_TOKEN="$(generate_runner_auth_token)"
 fi
@@ -284,7 +294,11 @@ fi
 SED_CMD="sed -i"
 [[ "$OSTYPE" == "darwin"* ]] && SED_CMD="sed -i ''"
 
+grep -q '^PUBLIC_BASE_URL=' "$ENV_FILE" || printf '%s\n' 'PUBLIC_BASE_URL=' >> "$ENV_FILE"
+grep -q '^N8N_RUNNERS_IMAGE_IDENTIFIER=' "$ENV_FILE" || printf '%s\n' 'N8N_RUNNERS_IMAGE_IDENTIFIER=' >> "$ENV_FILE"
+
 $SED_CMD "s|^HOST_IP=.*|HOST_IP=$FINAL_IP|" "$ENV_FILE"
+$SED_CMD "s|^PUBLIC_BASE_URL=.*|PUBLIC_BASE_URL=$PUBLIC_BASE_URL|" "$ENV_FILE"
 $SED_CMD "s|^GITHUB_REPOSITORY_OWNER_LC=.*|GITHUB_REPOSITORY_OWNER_LC=$REPO_OWNER|" "$ENV_FILE"
 $SED_CMD "s|^REPOSITORY_NAME=.*|REPOSITORY_NAME=$REPO_NAME|" "$ENV_FILE"
 $SED_CMD "s|^N8N_HOST_PORT=.*|N8N_HOST_PORT=$N8N_HOST_PORT|" "$ENV_FILE"
@@ -297,15 +311,13 @@ $SED_CMD "s|^MEM_LIMIT=.*|MEM_LIMIT=$MEM_LIMIT|" "$ENV_FILE"
 $SED_CMD "s|^CPU_LIMIT=.*|CPU_LIMIT=$CPU_LIMIT|" "$ENV_FILE"
 $SED_CMD "s|^PIDS_LIMIT=.*|PIDS_LIMIT=$PIDS_LIMIT|" "$ENV_FILE"
 
-if [ -n "$GHCR_DIGEST" ]; then
+if [ -n "$GHCR_DIGEST" ] && [ -n "$RUNNER_GHCR_DIGEST" ]; then
     $SED_CMD "s|^N8N_IMAGE_IDENTIFIER=.*|N8N_IMAGE_IDENTIFIER=@$GHCR_DIGEST|" "$ENV_FILE"
+    $SED_CMD "s|^N8N_RUNNERS_IMAGE_IDENTIFIER=.*|N8N_RUNNERS_IMAGE_IDENTIFIER=@$RUNNER_GHCR_DIGEST|" "$ENV_FILE"
     echo "✅ Digest written to .env — Docker will run the exact attested image."
     DEPLOY_IMAGE_REF="${GHCR_IMAGE}@${GHCR_DIGEST}"
-else
-    $SED_CMD "s|^N8N_IMAGE_IDENTIFIER=.*|N8N_IMAGE_IDENTIFIER=:$N8N_VERSION|" "$ENV_FILE"
-    echo "⚠️  Fallback tag written to .env — digest pinning disabled."
-    DEPLOY_IMAGE_REF="${GHCR_IMAGE}:${N8N_VERSION}"
 fi
+chmod 600 "$ENV_FILE"
 
 # ─── DEPLOY ─────────────────────────────────────────────────────────────────
 echo ""
@@ -315,7 +327,7 @@ echo "Image platform: automatic host-native selection"
 echo "Task runners: external mode via broker port ${N8N_RUNNERS_BROKER_PORT}"
 
 HOST_PLATFORM="$(get_docker_host_platform)"
-pull_runner_image_for_host "$N8N_VERSION" "$HOST_PLATFORM"
+pull_runner_image_for_host "${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" "$HOST_PLATFORM"
 
 docker compose up -d
 tag_local_release_image "$DEPLOY_IMAGE_REF" "$N8N_VERSION"

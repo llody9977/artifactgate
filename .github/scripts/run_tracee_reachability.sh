@@ -40,7 +40,7 @@ docker run -d \
   -v "$DOCKER_SOCKET_PATH:/var/run/docker.sock:ro" \
   -v /sys/fs/cgroup:/sys/fs/cgroup:ro \
   -v "$OUTPUT_DIR:/output" \
-  aquasec/tracee:latest \
+  aquasec/tracee:0.24.1@sha256:cfbbfee972e64a644f6b1bac74ee26998e6e12442697be4c797ae563553a2a5b \
   --containers enrich=true \
   --containers sockets.docker=/var/run/docker.sock \
   --containers cgroupfs.path=/sys/fs/cgroup \
@@ -79,7 +79,7 @@ echo "Running ZAP Baseline Scan against http://127.0.0.1:${HOST_PORT} ..."
 # We use -u root so ZAP can write zap-report.html directly to the output directory map without permission errors
 docker run -u root --rm --network host \
   -v "$OUTPUT_DIR:/zap/wrk/:rw" \
-  zaproxy/zap-stable zap-baseline.py \
+  zaproxy/zap-stable:2.17.0@sha256:8d387b1a63e3425beef4846e39719f5af2a787753af2d8b6558c6257d7a577a2 zap-baseline.py \
   -t "http://127.0.0.1:${HOST_PORT}" \
   -r zap-report.html -I >/dev/null 2>&1 || echo "ZAP Baseline finished"
 

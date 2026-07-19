@@ -76,7 +76,9 @@ def fetch_epss_scores(cve_ids):
     return scores
 
 
-def epss_risk(score: float) -> str:
+def epss_risk(score) -> str:
+    if score is None:
+        return "UNKNOWN"
     for threshold, label in EPSS_RISK_THRESHOLDS:
         if score >= threshold:
             return label
@@ -123,10 +125,10 @@ def main():
         published = parse_date(vuln.get("PublishedDate", ""))
         age_days = (now - published).days if published else None
         kev_hit = cve_id in kev_ids
-        epss_score = epss_scores.get(cve_id, 0.0)
+        epss_score = epss_scores.get(cve_id)
         epss_label = epss_risk(epss_score)
-        epss_percent = round(epss_score * 100, 2)
-        reachable = bool(vuln.get("Reachable"))
+        epss_percent = round(epss_score * 100, 2) if epss_score is not None else None
+        reachable = vuln.get("Reachable")
 
         gate_decision = "AUTO_ALLOWED"
         gate_reasons = []
@@ -135,13 +137,9 @@ def main():
             summary["critical_high_count"] += 1
 
             if age_days is None:
-                # Unknown age is tolerated only for lower-risk findings that are not
-                # known exploited, have low predicted exploitation likelihood, and
-                # showed no runtime reachability signal in the smoke test.
-                if kev_hit or epss_label != "LOW" or reachable:
-                    gate_decision = "MANUAL_REVIEW"
-                    gate_reasons.append("age_unknown")
-                    summary["unknown_age_critical_high_count"] += 1
+                gate_decision = "MANUAL_REVIEW"
+                gate_reasons.append("age_unknown")
+                summary["unknown_age_critical_high_count"] += 1
             elif age_days >= 30:
                 gate_decision = "MANUAL_REVIEW"
                 gate_reasons.append("age_30d_or_more")
@@ -157,13 +155,21 @@ def main():
                 gate_reasons.append(f"epss_{epss_label.lower()}")
                 summary["epss_high_or_critical_count"] += 1
 
+            if epss_label == "UNKNOWN":
+                gate_decision = "MANUAL_REVIEW"
+                gate_reasons.append("epss_unknown")
+
+            if reachable is None:
+                gate_decision = "MANUAL_REVIEW"
+                gate_reasons.append("reachability_unknown")
+
             if gate_decision == "MANUAL_REVIEW":
                 summary["manual_review_count"] += 1
             else:
                 summary["auto_allowed_critical_high_count"] += 1
 
         vuln["KevHit"] = kev_hit
-        vuln["EpssScore"] = float(f"{epss_score:.6f}")
+        vuln["EpssScore"] = float(f"{epss_score:.6f}") if epss_score is not None else None
         vuln["EpssPercent"] = epss_percent
         vuln["EpssRisk"] = epss_label
         vuln["AgeDays"] = age_days

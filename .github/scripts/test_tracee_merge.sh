@@ -84,10 +84,14 @@ GITHUB_STEP_SUMMARY="$summary_path" python3 .github/scripts/generate_summary.py 
 
 jq -e '.ReachabilitySummary.matched_event_count == 1' "$tmpdir/trivy-report.tracee.json" > /dev/null
 jq -e '.ReachabilitySummary.reachable_vulnerability_count == 1' "$tmpdir/trivy-report.tracee.json" > /dev/null
-jq -e '[.Results[]?.Vulnerabilities[]? | select(.VulnerabilityID == "CVE-2024-1111") | .Reachability] | any(. == "Yes")' "$tmpdir/trivy-report.enriched.json" > /dev/null
-jq -e '[.Results[]?.Vulnerabilities[]? | select(.VulnerabilityID == "CVE-2024-2222") | .Reachability] | any(. == "No")' "$tmpdir/trivy-report.enriched.json" > /dev/null
-jq -e '[.Results[]?.Vulnerabilities[]? | select(.VulnerabilityID == "CVE-2024-3333") | .GateDecision] | any(. == "AUTO_ALLOWED")' "$tmpdir/trivy-report.enriched.json" > /dev/null
-jq -e '.AnalysisSummary.unknown_age_critical_high_count == 0' "$tmpdir/trivy-report.enriched.json" > /dev/null
+jq -e '[.Results[]?.Vulnerabilities[]? | select(.VulnerabilityID == "CVE-2024-1111") | .Reachability] | any(. == "Observed")' "$tmpdir/trivy-report.enriched.json" > /dev/null
+jq -e '[.Results[]?.Vulnerabilities[]? | select(.VulnerabilityID == "CVE-2024-2222") | .Reachability] | any(. == "Not observed")' "$tmpdir/trivy-report.enriched.json" > /dev/null
+jq -e '[.Results[]?.Vulnerabilities[]? | select(.VulnerabilityID == "CVE-2024-3333") | .GateDecision] | any(. == "MANUAL_REVIEW")' "$tmpdir/trivy-report.enriched.json" > /dev/null
+jq -e '.AnalysisSummary.unknown_age_critical_high_count == 1' "$tmpdir/trivy-report.enriched.json" > /dev/null
 grep -q "Reachability" "$summary_path"
+
+python3 .github/scripts/generate_vex.py "$tmpdir/trivy-report.enriched.json" > "$tmpdir/vex.json"
+jq -e '[.statements[] | select(.vulnerability.name == "CVE-2024-2222") | .status] | any(. == "under_investigation")' "$tmpdir/vex.json" >/dev/null
+jq -e '[.statements[].status] | all(. != "not_affected")' "$tmpdir/vex.json" >/dev/null
 
 echo "Tracee merge fixture passed."

@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ArtifactGate evidence</title><link rel="stylesheet" href="style.css"></head>
+<body><main>
+  <p class="eyebrow">PERSONAL REFERENCE PROJECT · PUBLIC EVIDENCE</p>
+  <h1>ArtifactGate</h1>
+  <p class="lede">A controlled path for evaluating, promoting and deploying third-party n8n container images as an attested, digest-pinned application and runner pair.</p>
+  <section><h2>Latest promoted bundle</h2><dl id="release"><dt>Status</dt><dd>Loading release evidence…</dd></dl><p><a id="release-link" href="https://github.com/llody9977/artifactgate/releases">View releases</a></p></section>
+  <section><h2>What a promotion means</h2><p>A successful promotion means the bundle passed the documented checks or an explicit, expiring exception was approved. It does not certify that either image is vulnerability-free or suitable for a particular environment.</p></section>
+  <section><h2>Evidence boundaries</h2><p>Tracee results cover only the exercised smoke-test paths. “Not observed” does not prove that vulnerable code is unreachable. KEV, EPSS and scanner data can be delayed, revised, incomplete or incorrect.</p></section>
+  <section><h2>Verify before deployment</h2><pre><code>gh attestation verify oci://IMAGE@sha256:DIGEST -o llody9977</code></pre><p>Both the n8n image and external runner must be verified and deployed by immutable digest.</p></section>
+  <footer>© 2026 <a href="https://github.com/llody9977">llody9977</a> · <a href="https://github.com/llody9977/artifactgate/blob/main/LICENSE">Apache-2.0</a> · <a href="https://github.com/llody9977/artifactgate#disclaimer">Disclaimer</a></footer>
+</main><script>
+fetch('evidence.json').then(r=>r.json()).then(x=>{document.querySelector('#release').innerHTML=`<dt>Release</dt><dd>${x.name||x.tag_name}</dd><dt>Published</dt><dd>${new Date(x.published_at).toLocaleString()}</dd>`;document.querySelector('#release-link').href=x.html_url}).catch(()=>{});
+</script></body></html>

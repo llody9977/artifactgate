@@ -13,12 +13,12 @@ Main files:
 
 ## What the Deployment Does
 
-The deployment path is for running the promoted `n8n-trusted` image after it has cleared the promotion workflow.
+The deployment path runs the promoted `n8n-trusted` and `n8n-runners-trusted` bundle after both images clear the promotion workflow.
 
 It is responsible for:
 
-- pulling the trusted image from GHCR
-- preferring digest-pinned deployment when available
+- pulling both trusted images from GHCR
+- requiring digest-pinned deployment
 - running the workload with hardened Docker settings
 - starting n8n with external task runners
 - supporting upgrades and rollback
@@ -26,8 +26,8 @@ It is responsible for:
 ## Install Flow
 
 ```bash
-git clone https://github.com/llody9977/secure-ci-deploy.git
-cd secure-ci-deploy/iac/n8n
+git clone https://github.com/llody9977/artifactgate.git
+cd artifactgate/iac/n8n
 chmod +x install.sh
 ./install.sh
 ```
@@ -36,8 +36,8 @@ The installer:
 
 - detects the repository and release source
 - allows selection of an explicit version or latest release
-- fetches the GHCR digest from release metadata when available
-- verifies provenance with `gh attestation verify` when GitHub CLI is authenticated
+- requires both GHCR digests from release metadata
+- verifies both provenance attestations with an authenticated GitHub CLI
 - writes `.env` values for image selection, resource limits, and runner settings
 - deploys both `n8n` and `task-runners`
 
@@ -65,7 +65,7 @@ Why:
 - it can depend on Python runtime behavior inside the main container
 - external mode is better aligned with n8n production guidance
 
-The installer generates and stores a shared runner auth token in `.env`, then starts:
+The runner image passes through the same scan, promotion, SBOM and provenance process as the application image. The installer generates and stores a shared runner auth token in a mode-0600 `.env`, then starts:
 
 - the main `n8n` container
 - a `task-runners` sidecar
@@ -77,12 +77,14 @@ The installer generates and stores a shared runner auth token in `.env`, then st
 Typical manual rollback pattern:
 
 1. set `N8N_IMAGE_VERSION` to the known good version
-2. set `N8N_IMAGE_IDENTIFIER` to the known good digest or tag
+2. set `N8N_IMAGE_IDENTIFIER` and `N8N_RUNNERS_IMAGE_IDENTIFIER` to their known good digests
 3. run `docker compose up -d`
 
 ## Operational Notes
 
-- promotion publishes trusted images to `ghcr.io/llody9977/secure-ci-deploy/n8n-trusted`
+- promotion publishes the application and runner to separate trusted GHCR repositories
+- images published before the repository rename remain under `ghcr.io/llody9977/secure-ci-deploy/...` as legacy deployment paths; new promotions use `ghcr.io/llody9977/artifactgate/...`
+- the secure default binds to localhost, expects HTTPS through a reverse proxy, and enables secure cookies
 - new promotions should preserve upstream multi-arch manifests so ARM hosts can pull native images
 - re-scan findings are surfaced as GitHub issues when a previously accepted image crosses the review threshold
 
@@ -94,7 +96,7 @@ This usually means the published trusted image is single-arch. Re-run the promot
 
 ### Install cannot resolve a digest from GitHub Release
 
-If release metadata is missing or GitHub CLI is unavailable, the installer can fall back to a version tag. This works, but digest pinning is the preferred path.
+The installer fails closed. Confirm the release contains both labelled digests and that GitHub CLI is authenticated. Mutable-tag fallback is intentionally unsupported.
 
 ### Provenance verification cannot run
 

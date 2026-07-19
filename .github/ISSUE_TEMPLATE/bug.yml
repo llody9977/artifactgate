@@ -1,0 +1,21 @@
+name: Bug report
+description: Report a reproducible problem that is not a security vulnerability
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: Do not include credentials or sensitive scan evidence. Use private vulnerability reporting for security issues.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What happened and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Safe reproduction
+      description: Include the workflow run, image version and redacted output where relevant.
+    validations:
+      required: true

@@ -7,6 +7,15 @@ on:
         description: 'n8n version to pull (e.g. 1.55.3) — enter "latest" to auto-resolve'
         required: false
         default: 'latest'
+      waiver_cves:
+        description: 'Manual promotion only: comma-separated accepted CVE IDs'
+        required: false
+      waiver_justification:
+        description: 'Manual promotion only: business justification and compensating controls'
+        required: false
+      waiver_expires_on:
+        description: 'Manual promotion only: expiry date (YYYY-MM-DD)'
+        required: false
 
 env:
   N8N_VERSION: ${{ github.event.inputs.n8n_version || 'latest' }}
@@ -20,12 +29,11 @@ jobs:
     outputs:
       is_vulnerable: ${{ steps.trivy-scan.outputs.is_vulnerable }}
       image_digest: ${{ steps.fetch-digest.outputs.digest }}
+      runner_digest: ${{ steps.fetch-digest.outputs.runner_digest }}
       resolved_version: ${{ steps.fetch-digest.outputs.version }}
       skip_promotion: ${{ steps.fetch-digest.outputs.skip_promotion }}
-      version_branch: ${{ steps.fetch-digest.outputs.version_branch }}
-      version_branch_sha: ${{ steps.fetch-digest.outputs.version_branch_sha }}
     permissions:
-      contents: write
+      contents: read
       issues: write
       security-events: write
     steps:
@@ -41,7 +49,12 @@ jobs:
           echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
           sudo apt-get update && sudo apt-get install -y trivy
           # Install cosign for upstream publisher identity checks
-          curl -sLO https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
+          COSIGN_VERSION=v3.1.2
+          curl --fail --show-error --location --retry 3 -o cosign-linux-amd64 \
+            "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign-linux-amd64"
+          curl --fail --show-error --location --retry 3 -o cosign_checksums.txt \
+            "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign_checksums.txt"
+          grep 'cosign-linux-amd64$' cosign_checksums.txt | sha256sum --check -
           sudo install -m 755 cosign-linux-amd64 /usr/local/bin/cosign
 
       - name: Enforce Source Allowlist (Policy-as-Code)
@@ -112,8 +125,9 @@ jobs:
           # Check if this version has already been promoted to our GHCR (Idempotency Check)
           TOKEN="${{ secrets.GITHUB_TOKEN }}"
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TOKEN" "https://ghcr.io/v2/${{ github.repository }}/n8n-trusted/manifests/$VERSION")
-          if [ "$STATUS" = "200" ]; then
-            echo "✅ Version $VERSION is already promoted in ghcr.io/${{ github.repository }}/n8n-trusted."
+          RUNNER_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TOKEN" "https://ghcr.io/v2/${{ github.repository }}/n8n-runners-trusted/manifests/$VERSION")
+          if [ "$STATUS" = "200" ] && [ "$RUNNER_STATUS" = "200" ]; then
+            echo "✅ Version $VERSION application and runner are already promoted."
             echo "No action required. Exiting gracefully."
             echo "skip_promotion=true" >> $GITHUB_OUTPUT
             exit 0
@@ -136,28 +150,23 @@ jobs:
           echo "digest=$DIGEST" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-          # Create per-version branch via GitHub API (no local checkout — preserves workspace files)
-          BRANCH="n8n-$VERSION"
-          BRANCH_SHA="${{ github.sha }}"
-          EXISTING=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/git/refs/heads/$BRANCH")
-          if [ "$EXISTING" = "200" ]; then
-            echo "Branch $BRANCH already exists"
-          else
-            echo "Creating branch $BRANCH at $BRANCH_SHA"
-            curl -s -X POST \
-              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-              -H "Content-Type: application/json" \
-              "https://api.github.com/repos/${{ github.repository }}/git/refs" \
-              -d "{\"ref\": \"refs/heads/$BRANCH\", \"sha\": \"$BRANCH_SHA\"}" | jq '.ref'
+          RUNNER_TOKEN=$(curl -fsSL "https://auth.docker.io/token?service=registry.docker.io&scope=repository:n8nio/runners:pull" | jq -er '.token')
+          RUNNER_DIGEST=$(curl -fsSI -H "Authorization: Bearer $RUNNER_TOKEN" \
+            -H "Accept: $ACCEPT_HEADER" \
+            "https://registry-1.docker.io/v2/n8nio/runners/manifests/$VERSION" \
+            | awk 'BEGIN { IGNORECASE = 1 } /^docker-content-digest:/ { gsub("\r", "", $2); print $2; exit }')
+          if [ -z "$RUNNER_DIGEST" ]; then
+            echo "ERROR: Could not resolve the matching n8nio/runners:$VERSION digest."
+            exit 1
           fi
-          echo "version_branch=$BRANCH" >> $GITHUB_OUTPUT
-          echo "version_branch_sha=$BRANCH_SHA" >> $GITHUB_OUTPUT
+          echo "Runner pinned version: $VERSION @ $RUNNER_DIGEST"
+          echo "runner_digest=$RUNNER_DIGEST" >> "$GITHUB_OUTPUT"
 
           # Pull by immutable digest — guarantees what we scan is what we promote
           docker pull n8nio/n8n@$DIGEST
           docker tag n8nio/n8n@$DIGEST n8nio/n8n:$VERSION
+          docker pull n8nio/runners@$RUNNER_DIGEST
+          docker tag n8nio/runners@$RUNNER_DIGEST n8nio/runners:$VERSION
 
       - name: Scan Image for Secrets
         run: |
@@ -167,6 +176,8 @@ jobs:
             --severity CRITICAL,HIGH \
             --exit-code 1 \
             n8nio/n8n:${{ env.N8N_VERSION }}
+          trivy image --format table --scanners secret --severity CRITICAL,HIGH --exit-code 1 \
+            n8nio/runners:${{ env.N8N_VERSION }}
 
       - name: Scan Image for Malware (ClamAV)
         run: |
@@ -175,7 +186,9 @@ jobs:
           
           echo "Running ClamAV malware scan via Docker container..."
           chmod 644 image-for-clamav.tar
-          docker run --rm -v $(pwd):/scandir clamav/clamav:latest clamscan --max-filesize=4000M --max-scansize=4000M -r /scandir/image-for-clamav.tar || (echo "❌ Malware detected! Blocking promotion." && exit 1)
+          docker run --rm -v "$PWD:/scandir:ro" clamav/clamav:1.5.3@sha256:7f5389ccaa2368c383fa80e167ccfe44348d71e685f926fce4755eed1757673a clamscan --max-filesize=4000M --max-scansize=4000M /scandir/image-for-clamav.tar || (echo "❌ Malware detected! Blocking promotion." && exit 1)
+          docker save n8nio/runners:${{ env.N8N_VERSION }} -o runner-for-clamav.tar
+          docker run --rm -v "$PWD:/scandir:ro" clamav/clamav:1.5.3@sha256:7f5389ccaa2368c383fa80e167ccfe44348d71e685f926fce4755eed1757673a clamscan --max-filesize=4000M --max-scansize=4000M /scandir/runner-for-clamav.tar || (echo "❌ Malware detected in task runner image." && exit 1)
           echo "✅ No malware detected."
 
       - name: Scan Image for License Compliance
@@ -186,6 +199,8 @@ jobs:
             --severity CRITICAL,HIGH \
             --exit-code 0 \
             n8nio/n8n:${{ env.N8N_VERSION }}
+          trivy image --format table --scanners license --severity CRITICAL,HIGH --exit-code 0 \
+            n8nio/runners:${{ env.N8N_VERSION }}
 
       - name: Scan for CVEs (non-blocking report)
         run: |
@@ -195,6 +210,9 @@ jobs:
             --output trivy-report.raw.json \
             --severity CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN \
             n8nio/n8n:${{ env.N8N_VERSION }}
+
+          trivy image --format json --output trivy-report.runner.json \
+            --severity CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN n8nio/runners:${{ env.N8N_VERSION }}
 
           # Generate SARIF format for GitHub Security integration
           trivy image \
@@ -215,21 +233,34 @@ jobs:
             tracee-output/tracee-events.jsonl \
             "$(cat tracee-output/target-container-id.txt)" \
             trivy-report.tracee.json
+          jq '(.Results[]? | .Target) |= ("n8n-runners:" + .) |
+              (.Results[]?.Vulnerabilities[]? | .Reachable)=null |
+              (.Results[]?.Vulnerabilities[]? | .Reachability)="Unknown" |
+              (.Results[]?.Vulnerabilities[]? | .ReachabilityEvidence)=[]' \
+              trivy-report.runner.json > trivy-report.runner.annotated.json
+          jq -s '.[0].Results += (.[1].Results // []) | .[0]' \
+              trivy-report.tracee.json trivy-report.runner.annotated.json > trivy-report.combined.json
+          mv trivy-report.combined.json trivy-report.tracee.json
 
       - name: Upload Trivy scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@b1bff81932f5cdfc8695c7752dcee935dcd061c8 # v4
-        if: always() && hashFiles('trivy-results.sarif') != '' && steps.fetch-digest.outputs.version_branch_sha != ''
+        if: always() && hashFiles('trivy-results.sarif') != ''
         with:
           sarif_file: 'trivy-results.sarif'
           category: "image-promotion-${{ env.N8N_VERSION }}"
-          ref: refs/heads/n8n-${{ env.N8N_VERSION }}
-          sha: ${{ steps.fetch-digest.outputs.version_branch_sha }}
+          ref: refs/heads/main
+          sha: ${{ github.sha }}
 
       - name: Enrich findings with KEV, EPSS, and age
         id: enrich-findings
         run: |
-          curl -s -o kev.json https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json
+          curl --fail --show-error --location --retry 3 -o kev.json https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json
+          jq -e '.vulnerabilities | type == "array" and length > 1000' kev.json >/dev/null
           python3 .github/scripts/enrich_findings.py trivy-report.tracee.json kev.json trivy-report.json
+          jq --arg digest "${{ steps.fetch-digest.outputs.digest }}" \
+             --arg runner_digest "${{ steps.fetch-digest.outputs.runner_digest }}" \
+             '.Metadata.imageDigest=$digest | .Metadata.runnerDigest=$runner_digest' trivy-report.json > trivy-report.tmp.json
+          mv trivy-report.tmp.json trivy-report.json
 
           echo "### Vulnerability Scan — n8nio/n8n:${{ env.N8N_VERSION }}" > trivy-summary.txt
           echo "Pinned digest: ${{ steps.fetch-digest.outputs.digest }}" >> trivy-summary.txt
@@ -411,6 +442,10 @@ jobs:
       id-token: write
       attestations: write
     steps:
+      - name: Download validated scan evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: scan-report-${{ needs.scan-images.outputs.resolved_version }}
       - name: Log in to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
@@ -431,16 +466,28 @@ jobs:
         run: |
           DIGEST="${{ needs.scan-images.outputs.image_digest }}"
           TRUSTED_IMAGE="ghcr.io/${{ github.repository }}/n8n-trusted:${{ needs.scan-images.outputs.resolved_version }}"
+          RUNNER_IMAGE="ghcr.io/${{ github.repository }}/n8n-runners-trusted:${{ needs.scan-images.outputs.resolved_version }}"
           docker buildx imagetools create --tag "$TRUSTED_IMAGE" "n8nio/n8n@$DIGEST"
+          docker buildx imagetools create --tag "$RUNNER_IMAGE" "n8nio/runners@${{ needs.scan-images.outputs.runner_digest }}"
           GHCR_DIGEST=$(docker buildx imagetools inspect "$TRUSTED_IMAGE" | awk '/^Digest:/ { print $2; exit }')
+          RUNNER_GHCR_DIGEST=$(docker buildx imagetools inspect "$RUNNER_IMAGE" | awk '/^Digest:/ { print $2; exit }')
           echo "GHCR digest: $GHCR_DIGEST"
           echo "digest=$GHCR_DIGEST" >> $GITHUB_OUTPUT
+          echo "runner_digest=$RUNNER_GHCR_DIGEST" >> "$GITHUB_OUTPUT"
 
       - name: Attest Build Provenance
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-name: ghcr.io/${{ github.repository }}/n8n-trusted
           subject-digest: ${{ steps.docker_push.outputs.digest }}
+          push-to-registry: true
+          show-summary: false
+
+      - name: Attest task runner provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-name: ghcr.io/${{ github.repository }}/n8n-runners-trusted
+          subject-digest: ${{ steps.docker_push.outputs.runner_digest }}
           push-to-registry: true
           show-summary: false
 
@@ -451,7 +498,9 @@ jobs:
           trivy image \
             --format spdx-json \
             --output sbom.spdx.json \
-            n8nio/n8n:${{ needs.scan-images.outputs.resolved_version }}
+            ghcr.io/${{ github.repository }}/n8n-trusted@${{ steps.docker_push.outputs.digest }}
+          trivy image --format spdx-json --output runner-sbom.spdx.json \
+            ghcr.io/${{ github.repository }}/n8n-runners-trusted@${{ steps.docker_push.outputs.runner_digest }}
           echo "SBOM generated: $(jq '.packages | length' sbom.spdx.json) packages"
 
       - name: Attest SBOM
@@ -460,6 +509,15 @@ jobs:
           subject-name: ghcr.io/${{ github.repository }}/n8n-trusted
           subject-digest: ${{ steps.docker_push.outputs.digest }}
           sbom-path: './sbom.spdx.json'
+          push-to-registry: true
+          show-summary: false
+
+      - name: Attest task runner SBOM
+        uses: actions/attest-sbom@5026d3663739160db546203eeaffa6aa1c51a4d6 # v1
+        with:
+          subject-name: ghcr.io/${{ github.repository }}/n8n-runners-trusted
+          subject-digest: ${{ steps.docker_push.outputs.runner_digest }}
+          sbom-path: './runner-sbom.spdx.json'
           push-to-registry: true
           show-summary: false
 
@@ -473,7 +531,9 @@ jobs:
         with:
           files: |
             ./sbom.spdx.json
+            ./runner-sbom.spdx.json
             ./trivy-report.json
+            ./vex.json
           tag_name: n8n-${{ needs.scan-images.outputs.resolved_version }}
           name: "n8n ${{ needs.scan-images.outputs.resolved_version }} (Trusted)"
           body: |
@@ -492,7 +552,9 @@ jobs:
 
             ### Source
             - Upstream: `n8nio/n8n@${{ needs.scan-images.outputs.image_digest }}`
-            - GHCR digest: `${{ steps.docker_push.outputs.digest }}`
+            - n8n digest: `${{ steps.docker_push.outputs.digest }}`
+            - runner digest: `${{ steps.docker_push.outputs.runner_digest }}`
+            - Task runner: `ghcr.io/${{ github.repository }}/n8n-runners-trusted@${{ steps.docker_push.outputs.runner_digest }}`
             - Trivy/Tracee Gate: ✅ Auto-promotion eligible under CVE age, KEV, EPSS, and runtime reachability reporting
             - Full report: [`scan-report-${{ needs.scan-images.outputs.resolved_version }}`](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
 
@@ -501,6 +563,7 @@ jobs:
             ```
             N8N_IMAGE_VERSION=${{ needs.scan-images.outputs.resolved_version }}
             N8N_IMAGE_IDENTIFIER=@${{ steps.docker_push.outputs.digest }}
+            N8N_RUNNERS_IMAGE_IDENTIFIER=@${{ steps.docker_push.outputs.runner_digest }}
             ```
 
       - name: Prune old GitHub releases
@@ -535,6 +598,46 @@ jobs:
       id-token: write
       attestations: write
     steps:
+      - name: Validate expiring exception record
+        env:
+          WAIVER_CVES: ${{ inputs.waiver_cves }}
+          WAIVER_JUSTIFICATION: ${{ inputs.waiver_justification }}
+          WAIVER_EXPIRES_ON: ${{ inputs.waiver_expires_on }}
+        run: |
+          if ! [[ "$WAIVER_CVES" =~ CVE-[0-9]{4}-[0-9]{4,} ]]; then
+            echo "Manual promotion requires at least one CVE ID in waiver_cves."
+            exit 1
+          fi
+          if [ "${#WAIVER_JUSTIFICATION}" -lt 30 ]; then
+            echo "waiver_justification must explain the need and compensating controls."
+            exit 1
+          fi
+          if ! [[ "$WAIVER_EXPIRES_ON" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || \
+             [ "$(date -u -d "$WAIVER_EXPIRES_ON" +%s 2>/dev/null || echo 0)" -le "$(date -u +%s)" ]; then
+            echo "waiver_expires_on must be a valid future YYYY-MM-DD date."
+            exit 1
+          fi
+          jq -n --arg cves "$WAIVER_CVES" --arg justification "$WAIVER_JUSTIFICATION" \
+            --arg expires "$WAIVER_EXPIRES_ON" --arg reviewer "${{ github.actor }}" \
+            --arg digest "${{ needs.scan-images.outputs.image_digest }}" \
+            --arg runner_digest "${{ needs.scan-images.outputs.runner_digest }}" \
+            '{accepted_cves:($cves|split(",")|map(gsub("^\\s+|\\s+$";""))),justification:$justification,expires_on:$expires,reviewer:$reviewer,upstream_digest:$digest,runner_upstream_digest:$runner_digest}' \
+            > waiver.json
+      - name: Download validated scan evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: scan-report-${{ needs.scan-images.outputs.resolved_version }}
+      - name: Require waiver coverage for every gated CVE
+        run: |
+          jq -r '[.Results[]?.Vulnerabilities[]? | select(.GateDecision=="MANUAL_REVIEW") | .VulnerabilityID] | unique[]' \
+            trivy-report.json | sort -u > required-cves.txt
+          jq -r '.accepted_cves[]' waiver.json | sort -u > accepted-cves.txt
+          MISSING=$(comm -23 required-cves.txt accepted-cves.txt)
+          if [ -n "$MISSING" ]; then
+            echo "Waiver does not cover every gated CVE:"
+            echo "$MISSING"
+            exit 1
+          fi
       - name: Log in to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
@@ -555,10 +658,14 @@ jobs:
         run: |
           DIGEST="${{ needs.scan-images.outputs.image_digest }}"
           TRUSTED_IMAGE="ghcr.io/${{ github.repository }}/n8n-trusted:${{ needs.scan-images.outputs.resolved_version }}"
+          RUNNER_IMAGE="ghcr.io/${{ github.repository }}/n8n-runners-trusted:${{ needs.scan-images.outputs.resolved_version }}"
           docker buildx imagetools create --tag "$TRUSTED_IMAGE" "n8nio/n8n@$DIGEST"
+          docker buildx imagetools create --tag "$RUNNER_IMAGE" "n8nio/runners@${{ needs.scan-images.outputs.runner_digest }}"
           GHCR_DIGEST=$(docker buildx imagetools inspect "$TRUSTED_IMAGE" | awk '/^Digest:/ { print $2; exit }')
+          RUNNER_GHCR_DIGEST=$(docker buildx imagetools inspect "$RUNNER_IMAGE" | awk '/^Digest:/ { print $2; exit }')
           echo "GHCR digest: $GHCR_DIGEST"
           echo "digest=$GHCR_DIGEST" >> $GITHUB_OUTPUT
+          echo "runner_digest=$RUNNER_GHCR_DIGEST" >> "$GITHUB_OUTPUT"
 
       - name: Attest Build Provenance
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
@@ -568,12 +675,22 @@ jobs:
           push-to-registry: true
           show-summary: false
 
+      - name: Attest task runner provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-name: ghcr.io/${{ github.repository }}/n8n-runners-trusted
+          subject-digest: ${{ steps.docker_push.outputs.runner_digest }}
+          push-to-registry: true
+          show-summary: false
+
       - name: Generate SBOM with Trivy (spdx-json format, consistent with rescan)
         run: |
           trivy image \
             --format spdx-json \
             --output sbom.spdx.json \
-            n8nio/n8n:${{ needs.scan-images.outputs.resolved_version }}
+            ghcr.io/${{ github.repository }}/n8n-trusted@${{ steps.docker_push.outputs.digest }}
+          trivy image --format spdx-json --output runner-sbom.spdx.json \
+            ghcr.io/${{ github.repository }}/n8n-runners-trusted@${{ steps.docker_push.outputs.runner_digest }}
           echo "SBOM generated: $(jq '.packages | length' sbom.spdx.json) packages"
 
       - name: Attest SBOM
@@ -582,6 +699,15 @@ jobs:
           subject-name: ghcr.io/${{ github.repository }}/n8n-trusted
           subject-digest: ${{ steps.docker_push.outputs.digest }}
           sbom-path: './sbom.spdx.json'
+          push-to-registry: true
+          show-summary: false
+
+      - name: Attest task runner SBOM
+        uses: actions/attest-sbom@5026d3663739160db546203eeaffa6aa1c51a4d6 # v1
+        with:
+          subject-name: ghcr.io/${{ github.repository }}/n8n-runners-trusted
+          subject-digest: ${{ steps.docker_push.outputs.runner_digest }}
+          sbom-path: './runner-sbom.spdx.json'
           push-to-registry: true
           show-summary: false
 
@@ -595,13 +721,19 @@ jobs:
         with:
           files: |
             ./sbom.spdx.json
+            ./runner-sbom.spdx.json
             ./trivy-report.json
+            ./vex.json
+            ./waiver.json
           tag_name: n8n-${{ needs.scan-images.outputs.resolved_version }}
           name: "n8n ${{ needs.scan-images.outputs.resolved_version }} (Manually Approved — Vulnerabilities Present)"
           body: |
             ## ⚠️ n8n ${{ needs.scan-images.outputs.resolved_version }} — Manually Approved
 
             This version was promoted **after manual review under the CVE age, KEV, EPSS, and runtime reachability policy**.
+            - Accepted CVEs: `${{ inputs.waiver_cves }}`
+            - Exception expires: `${{ inputs.waiver_expires_on }}`
+            - Justification: ${{ inputs.waiver_justification }}
             Full scan report: [`scan-report-${{ needs.scan-images.outputs.resolved_version }}`](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
 
             ### Image Reference (Digest-Pinned)
@@ -616,13 +748,16 @@ jobs:
 
             ### Source
             - Upstream: `n8nio/n8n@${{ needs.scan-images.outputs.image_digest }}`
-            - GHCR digest: `${{ steps.docker_push.outputs.digest }}`
+            - n8n digest: `${{ steps.docker_push.outputs.digest }}`
+            - runner digest: `${{ steps.docker_push.outputs.runner_digest }}`
+            - Task runner: `ghcr.io/${{ github.repository }}/n8n-runners-trusted@${{ steps.docker_push.outputs.runner_digest }}`
 
             ### Rollback
             Set these values in your `.env` file and run `docker compose up -d`:
             ```
             N8N_IMAGE_VERSION=${{ needs.scan-images.outputs.resolved_version }}
             N8N_IMAGE_IDENTIFIER=@${{ steps.docker_push.outputs.digest }}
+            N8N_RUNNERS_IMAGE_IDENTIFIER=@${{ steps.docker_push.outputs.runner_digest }}
             ```
 
       - name: Prune old GitHub releases

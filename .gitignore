@@ -1,0 +1,5 @@
+iac/n8n/.env
+iac/n8n/upgrade.log
+__pycache__/
+*.pyc
+.DS_Store

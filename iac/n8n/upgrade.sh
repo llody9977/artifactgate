@@ -32,13 +32,10 @@ get_docker_host_platform() {
 }
 
 pull_runner_image_for_host() {
-    local version="$1"
+    local runner_ref="$1"
     local host_platform="$2"
-    local runner_image="n8nio/runners:${version}"
-
     log "Refreshing task runner image for host platform ${host_platform}"
-    docker image rm -f "$runner_image" >/dev/null 2>&1 || true
-    docker pull --platform "$host_platform" "$runner_image" >/dev/null
+    docker pull --platform "$host_platform" "$runner_ref" >/dev/null
 }
 
 tag_local_release_image() {
@@ -140,19 +137,25 @@ log "🆕 New version available: $CURRENT_VERSION → $LATEST_VERSION"
 
 # ─── SNAPSHOT CURRENT STATE FOR ROLLBACK ─────────────────────────────────────
 PREV_IDENTIFIER=$(grep '^N8N_IMAGE_IDENTIFIER=' "$ENV_FILE" | cut -d '=' -f 2- || true)
+PREV_RUNNER_IDENTIFIER=$(grep '^N8N_RUNNERS_IMAGE_IDENTIFIER=' "$ENV_FILE" | cut -d '=' -f 2- || true)
 PREV_VERSION="$CURRENT_VERSION"
 log "Saving rollback state: $PREV_IDENTIFIER (version $PREV_VERSION)"
 
 # ─── FETCH DIGEST FOR NEW VERSION ────────────────────────────────────────────
 RELEASE_TAG="n8n-${LATEST_VERSION}"
 RELEASE_BODY=$(gh release view "$RELEASE_TAG" --repo "$REPO_SLUG" --json body -q '.body' 2>/dev/null || echo "")
-NEW_DIGEST=$(printf '%s\n' "$RELEASE_BODY" | grep -Eo 'sha256:[[:xdigit:]]{64}' | head -1)
+NEW_DIGEST=$(printf '%s\n' "$RELEASE_BODY" | sed -nE 's/.*n8n digest: `?(sha256:[[:xdigit:]]{64}).*/\1/p' | head -1)
+NEW_RUNNER_DIGEST=$(printf '%s\n' "$RELEASE_BODY" | sed -nE 's/.*runner digest: `?(sha256:[[:xdigit:]]{64}).*/\1/p' | head -1)
 
-if [ -n "$NEW_DIGEST" ]; then
+if [ -n "$NEW_DIGEST" ] && [ -n "$NEW_RUNNER_DIGEST" ]; then
     log "✅ Digest for $LATEST_VERSION: $NEW_DIGEST"
 else
-    log "⚠️  No digest found for $LATEST_VERSION. Falling back to version tag."
+    log "❌ Both promoted image digests are required. Upgrade aborted."
+    exit 1
 fi
+
+gh attestation verify "oci://ghcr.io/${REPO_SLUG}/n8n-trusted@${NEW_DIGEST}" -o "${REPO_SLUG%%/*}" >/dev/null
+gh attestation verify "oci://ghcr.io/${REPO_SLUG}/n8n-runners-trusted@${NEW_RUNNER_DIGEST}" -o "${REPO_SLUG%%/*}" >/dev/null
 
 # ─── APPLY UPGRADE ───────────────────────────────────────────────────────────
 log "🚀 Upgrading to n8n $LATEST_VERSION..."
@@ -160,19 +163,17 @@ log "🚀 Upgrading to n8n $LATEST_VERSION..."
 SED_CMD="sed -i"
 [[ "$OSTYPE" == "darwin"* ]] && SED_CMD="sed -i ''"
 
+grep -q '^N8N_RUNNERS_IMAGE_IDENTIFIER=' "$ENV_FILE" || printf '%s\n' 'N8N_RUNNERS_IMAGE_IDENTIFIER=' >> "$ENV_FILE"
+
 $SED_CMD "s/^N8N_IMAGE_VERSION=.*/N8N_IMAGE_VERSION=$LATEST_VERSION/" "$ENV_FILE"
 
-if [ -n "$NEW_DIGEST" ]; then
-    $SED_CMD "s|^N8N_IMAGE_IDENTIFIER=.*|N8N_IMAGE_IDENTIFIER=@$NEW_DIGEST|" "$ENV_FILE"
-    DEPLOY_IMAGE_REF="ghcr.io/${REPO_SLUG}/n8n-trusted@${NEW_DIGEST}"
-else
-    $SED_CMD "s|^N8N_IMAGE_IDENTIFIER=.*|N8N_IMAGE_IDENTIFIER=:$LATEST_VERSION|" "$ENV_FILE"
-    DEPLOY_IMAGE_REF="ghcr.io/${REPO_SLUG}/n8n-trusted:${LATEST_VERSION}"
-fi
+$SED_CMD "s|^N8N_IMAGE_IDENTIFIER=.*|N8N_IMAGE_IDENTIFIER=@$NEW_DIGEST|" "$ENV_FILE"
+$SED_CMD "s|^N8N_RUNNERS_IMAGE_IDENTIFIER=.*|N8N_RUNNERS_IMAGE_IDENTIFIER=@$NEW_RUNNER_DIGEST|" "$ENV_FILE"
+DEPLOY_IMAGE_REF="ghcr.io/${REPO_SLUG}/n8n-trusted@${NEW_DIGEST}"
 
 cd "$SCRIPT_DIR"
 HOST_PLATFORM="$(get_docker_host_platform)"
-pull_runner_image_for_host "$LATEST_VERSION" "$HOST_PLATFORM"
+pull_runner_image_for_host "ghcr.io/${REPO_SLUG}/n8n-runners-trusted@${NEW_RUNNER_DIGEST}" "$HOST_PLATFORM"
 docker compose pull 2>&1 | tee -a "$LOG_FILE"
 docker compose up -d 2>&1 | tee -a "$LOG_FILE"
 tag_local_release_image "$DEPLOY_IMAGE_REF" "$LATEST_VERSION"
@@ -202,6 +203,9 @@ if [ "$HEALTHY" = false ]; then
     $SED_CMD "s/^N8N_IMAGE_VERSION=.*/N8N_IMAGE_VERSION=$PREV_VERSION/" "$ENV_FILE"
     if [ -n "$PREV_IDENTIFIER" ]; then
         $SED_CMD "s|^N8N_IMAGE_IDENTIFIER=.*|N8N_IMAGE_IDENTIFIER=$PREV_IDENTIFIER|" "$ENV_FILE"
+    fi
+    if [ -n "$PREV_RUNNER_IDENTIFIER" ]; then
+        $SED_CMD "s|^N8N_RUNNERS_IMAGE_IDENTIFIER=.*|N8N_RUNNERS_IMAGE_IDENTIFIER=$PREV_RUNNER_IDENTIFIER|" "$ENV_FILE"
     fi
 
     docker compose up -d 2>&1 | tee -a "$LOG_FILE"

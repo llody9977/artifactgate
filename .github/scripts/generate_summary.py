@@ -120,7 +120,7 @@ def main():
             pkg = v.get("PkgName", "")
             installed = v.get("InstalledVersion", "")
             fixed = v.get("FixedVersion") or "None"
-            reachable = "Yes" if v.get("Reachable") else "No"
+            reachable = v.get("Reachability", "Unknown")
             kev = "\u2705 Yes" if v.get("KevHit") or cve_id in kev_ids else "No"
             epss = fmt_epss(v.get("EpssPercent"))
             epss_risk = v.get("EpssRisk", "-")

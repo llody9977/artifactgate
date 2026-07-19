@@ -12,9 +12,8 @@ services:
     # Controls are labelled with their CIS ID for traceability.
 
     # CIS 5.14 — Use on-failure restart policy with a max count
-    # 'unless-stopped' ensures auto-restart on host reboot while still
-    # respecting intentional `docker compose stop` commands
-    restart: "unless-stopped"
+    # Bound retries avoid an unbounded crash loop.
+    restart: "on-failure:5"
 
     # CIS 5.21 — Do not disable the default seccomp profile
     # CIS 5.1  — Do not disable AppArmor (apply docker-default profile)
@@ -87,8 +86,9 @@ services:
     # ── Environment ───────────────────────────────────────────────────────────
     environment:
       - N8N_USER_MANAGEMENT_DISABLED=false
-      - WEBHOOK_URL=http://${HOST_IP}:${N8N_HOST_PORT}/
-      - N8N_SECURE_COOKIE=false
+      - WEBHOOK_URL=${PUBLIC_BASE_URL}
+      - N8N_EDITOR_BASE_URL=${PUBLIC_BASE_URL}
+      - N8N_SECURE_COOKIE=true
       - N8N_RUNNERS_MODE=external
       - N8N_RUNNERS_BROKER_LISTEN_ADDRESS=0.0.0.0
       - N8N_RUNNERS_BROKER_PORT=${N8N_RUNNERS_BROKER_PORT}
@@ -117,8 +117,9 @@ services:
         max-file: "3"
 
   task-runners:
-    image: n8nio/runners:${N8N_IMAGE_VERSION}
-    restart: "unless-stopped"
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER_LC}/${REPOSITORY_NAME}/n8n-runners-trusted${N8N_RUNNERS_IMAGE_IDENTIFIER}
+    restart: "on-failure:5"
+    user: "runner"
     depends_on:
       - n8n
     security_opt:
