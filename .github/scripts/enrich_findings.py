@@ -128,7 +128,7 @@ def main():
         epss_score = epss_scores.get(cve_id)
         epss_label = epss_risk(epss_score)
         epss_percent = round(epss_score * 100, 2) if epss_score is not None else None
-        reachable = vuln.get("Reachable")
+        reachable = vuln.get("RuntimeObserved")
 
         gate_decision = "AUTO_ALLOWED"
         gate_reasons = []
@@ -159,9 +159,13 @@ def main():
                 gate_decision = "MANUAL_REVIEW"
                 gate_reasons.append("epss_unknown")
 
+            if reachable is True:
+                gate_decision = "MANUAL_REVIEW"
+                gate_reasons.append("runtime_observed")
+
             if reachable is None:
                 gate_decision = "MANUAL_REVIEW"
-                gate_reasons.append("reachability_unknown")
+                gate_reasons.append("runtime_observation_unknown")
 
             if gate_decision == "MANUAL_REVIEW":
                 summary["manual_review_count"] += 1

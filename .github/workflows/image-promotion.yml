@@ -239,8 +239,8 @@ jobs:
             "$(cat tracee-output/target-container-id.txt)" \
             trivy-report.tracee.json
           jq '(.Results[]? | .Target) |= ("n8n-runners:" + .) |
-              (.Results[]?.Vulnerabilities[]? | .Reachable)=null |
-              (.Results[]?.Vulnerabilities[]? | .Reachability)="Unknown" |
+              (.Results[]?.Vulnerabilities[]? | .RuntimeObserved)=null |
+              (.Results[]?.Vulnerabilities[]? | .RuntimeObservation)="Unknown" |
               (.Results[]?.Vulnerabilities[]? | .ReachabilityEvidence)=[]' \
               trivy-report.runner.json > trivy-report.runner.annotated.json
           jq -s '.[0].Results += (.[1].Results // []) | .[0]' \

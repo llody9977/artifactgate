@@ -25,32 +25,32 @@ This repository uses a richer gate so promotion decisions are not based on sever
 
 Age adds a tolerance-window signal. A fresh issue and a long-standing unresolved issue should not always be treated the same way.
 
-### Tracee Reachability
+### Runtime Observation
 
-Tracee contributes bounded runtime context by showing whether mapped package files were observed during a smoke run. “Not observed” does not prove that vulnerable code is unreachable.
+Tracee contributes bounded runtime context by showing whether mapped package files were observed loading during a container smoke run. “Not observed” does not prove that vulnerable code is unreachable.
 
-Current status:
-
-- reachability is reported as analyst context
-- missing collection or mapping is represented as unknown and fails closed for critical/high findings
-- it is not the sole approval signal
+Our runtime observation policy enforces three key principles:
+1. **Observed Escalation**: If a package containing a `CRITICAL` or `HIGH` vulnerability is observed loading during the smoke run (`Observed`), the finding is escalated to `Manual review` with the reason `runtime_observed`.
+2. **Coverage Downgrade**: The smoke test must exercise at least 20% of all mapped packages. If package-level coverage falls below 20%, all `Not observed` findings are downgraded to `Unknown`, forcing them to fail closed (requiring manual review).
+3. **No De-escalation**: A vulnerability that is already flagged for manual review (due to age, KEV, or EPSS) is never downgraded to auto-allowed because it was not observed loading.
 
 ## Gate Policy
 
 For `CRITICAL` and `HIGH` findings:
 
-| Finding severity | KEV | EPSS | Age | Reachability | Action |
+| Finding severity | KEV | EPSS | Age | Runtime Observation | Action |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `CRITICAL` / `HIGH` | Yes | Any | Any | Any | Manual review |
 | `CRITICAL` / `HIGH` | No | Above repo threshold | Any | Any | Manual review |
 | `CRITICAL` / `HIGH` | No | Below repo threshold | At least 30 days | Any | Manual review |
 | `CRITICAL` / `HIGH` | No | Unknown | Any | Any | Manual review |
 | `CRITICAL` / `HIGH` | No | Low | Unknown | Any | Manual review |
+| `CRITICAL` / `HIGH` | No | Low | Any | Observed | Manual review |
 | `CRITICAL` / `HIGH` | No | Low | Any | Unknown | Manual review |
-| `CRITICAL` / `HIGH` | No | Below threshold | Under 30 days | Any | Auto-allowed |
+| `CRITICAL` / `HIGH` | No | Below threshold | Under 30 days | Not Observed (Coverage &ge; 20%) | Auto-allowed |
 | `MEDIUM` / `LOW` / `UNKNOWN` | No | Any | Any | Any | Reported, but does not directly trigger manual approval |
 
-Unknown evidence is not converted to a zero score or a negative reachability claim. Critical/high findings require manual review whenever age, EPSS or required runtime evidence is unavailable.
+Unknown evidence is not converted to a zero score or a negative observation claim. Critical/high findings require manual review whenever age, EPSS or required runtime evidence is unavailable or coverage is insufficient.
 
 ## EPSS Policy Bands
 

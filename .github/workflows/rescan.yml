@@ -143,6 +143,11 @@ jobs:
           mkdir -p "tracee-$VERSION"
           .github/scripts/collect_package_files.sh "$IMAGE" "rescan-$VERSION.raw.json" "tracee-$VERSION/package-files.tsv"
           .github/scripts/run_tracee_reachability.sh "$IMAGE" "$PWD/tracee-$VERSION" "tracee-rescan-$VERSION-${{ github.run_id }}" "${{ env.TRACEE_HOST_PORT }}" "${{ env.TRACEE_CONTAINER_PORT }}"
+          if [ -f "tracee-$VERSION/zap-report.html" ]; then
+            echo "✅ OWASP ZAP DAST scan completed successfully. Report saved at tracee-$VERSION/zap-report.html"
+          else
+            echo "⚠️ OWASP ZAP DAST scan did not generate a report."
+          fi
           python3 .github/scripts/merge_tracee_reachability.py \
             "rescan-$VERSION.raw.json" \
             "tracee-$VERSION/package-files.tsv" \
@@ -150,8 +155,8 @@ jobs:
             "$(cat "tracee-$VERSION/target-container-id.txt")" \
             "rescan-$VERSION.tracee.json"
           jq '(.Results[]? | .Target) |= ("n8n-runners:" + .) |
-              (.Results[]?.Vulnerabilities[]? | .Reachable)=null |
-              (.Results[]?.Vulnerabilities[]? | .Reachability)="Unknown" |
+              (.Results[]?.Vulnerabilities[]? | .RuntimeObserved)=null |
+              (.Results[]?.Vulnerabilities[]? | .RuntimeObservation)="Unknown" |
               (.Results[]?.Vulnerabilities[]? | .ReachabilityEvidence)=[]' \
               "rescan-$VERSION.runner.json" > "rescan-$VERSION.runner.annotated.json"
           jq -s '.[0].Results += (.[1].Results // []) | .[0]' \

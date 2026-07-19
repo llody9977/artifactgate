@@ -23,7 +23,7 @@ ArtifactGate is designed to answer six questions before deployment:
 | **Source** — Did this come from an allowed upstream? | source allowlist and version intake policy |
 | **Identity** — Which exact bytes were assessed? | OCI digest resolution and digest pinning |
 | **Composition** — What is declared to be inside? | SPDX SBOM and machine-readable OpenVEX statement generation and attestation |
-| **Risk** — What security signals are known now? | vulnerability, malware, secret, licence, KEV, EPSS, age, OpenVEX and bounded runtime checks |
+| **Risk** — What security signals are known now? | vulnerability, malware, secret, licence, KEV, EPSS, age, OpenVEX and runtime observation |
 | **Decision** — Why was it promoted? | policy gate or explicit, scoped, expiring waiver and cryptographically signed OpenVEX document |
 | **Continuity** — Are we deploying and monitoring the same artifact? | keyless promotion attestation, verification before deployment and scheduled re-scan |
 
@@ -33,7 +33,7 @@ These are complementary controls. Provenance is not an SBOM, an SBOM is not a vu
 
 - allowlists the upstream source image and enforces semver-style version intake
 - resolves and scans immutable application and runner digests
-- enriches findings with `KEV`, `EPSS`, CVE age, and runtime reachability context
+- enriches findings with `KEV`, `EPSS`, CVE age, and bounded runtime observation
 - promotes an approved application and runner pair to GHCR
 - attests provenance and SBOM data for the promoted artifact
 - re-scans the latest promoted release on a schedule
@@ -76,7 +76,7 @@ flowchart TD
     A["Promotion request or weekly version check"] --> B["Allowlist and semver policy"]
     B --> C["Resolve immutable digest"]
     C --> D["Trivy, ClamAV, Tracee, and ZAP checks"]
-    D --> E["KEV, EPSS, age, and reachability enrichment"]
+    D --> E["KEV, EPSS, age, and runtime observation enrichment"]
     E --> F{"Approval gate"}
     F -->|Lower-risk| G["Auto-promote to GHCR"]
     F -->|Higher-risk| H["Manual approval"]
