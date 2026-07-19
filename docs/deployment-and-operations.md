@@ -83,7 +83,6 @@ Typical manual rollback pattern:
 ## Operational Notes
 
 - promotion publishes the application and runner to separate trusted GHCR repositories
-- images published before the repository rename remain under `ghcr.io/llody9977/secure-ci-deploy/...` as legacy deployment paths; new promotions use `ghcr.io/llody9977/artifactgate/...`
 - the secure default binds to localhost, expects HTTPS through a reverse proxy, and enables secure cookies
 - new promotions should preserve upstream multi-arch manifests so ARM hosts can pull native images
 - re-scan findings are surfaced as GitHub issues when a previously accepted image crosses the review threshold
