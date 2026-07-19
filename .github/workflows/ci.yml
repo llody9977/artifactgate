@@ -30,7 +30,7 @@ jobs:
           python3 .github/scripts/test_validate_compose.py
 
       - name: IaC Scan (Checkov)
-        uses: bridgecrewio/checkov-action@2fd3901c8feb52417f27f0d9800259a106c1ec1e # master
+        uses: bridgecrewio/checkov-action@7b972723c44fb3d256283fac96fae5d7c1894bb7 # master
         with:
           directory: iac/n8n
           quiet: true
