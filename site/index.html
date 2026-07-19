@@ -1,15 +1,137 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ArtifactGate evidence</title><link rel="stylesheet" href="style.css"></head>
-<body><main>
-  <p class="eyebrow">PERSONAL REFERENCE PROJECT · PUBLIC EVIDENCE</p>
-  <h1>ArtifactGate</h1>
-  <p class="lede">A controlled path for evaluating, promoting and deploying third-party n8n container images as an attested, digest-pinned application and runner pair.</p>
-  <section><h2>Latest promoted bundle</h2><dl id="release"><dt>Status</dt><dd>Loading release evidence…</dd></dl><p><a id="release-link" href="https://github.com/llody9977/artifactgate/releases">View releases</a></p></section>
-  <section><h2>What a promotion means</h2><p>A successful promotion means the bundle passed the documented checks or an explicit, expiring exception was approved. It does not certify that either image is vulnerability-free or suitable for a particular environment.</p></section>
-  <section><h2>Evidence boundaries</h2><p>Tracee results cover only the exercised smoke-test paths. “Not observed” does not prove that vulnerable code is unreachable. KEV, EPSS and scanner data can be delayed, revised, incomplete or incorrect.</p></section>
-  <section><h2>Verify before deployment</h2><pre><code>gh attestation verify oci://IMAGE@sha256:DIGEST -o llody9977</code></pre><p>Both the n8n image and external runner must be verified and deployed by immutable digest.</p></section>
-  <footer>© 2026 <a href="https://github.com/llody9977">llody9977</a> · <a href="https://github.com/llody9977/artifactgate/blob/main/LICENSE">Apache-2.0</a> · <a href="https://github.com/llody9977/artifactgate#disclaimer">Disclaimer</a></footer>
-</main><script>
-fetch('evidence.json').then(r=>r.json()).then(x=>{document.querySelector('#release').innerHTML=`<dt>Release</dt><dd>${x.name||x.tag_name}</dd><dt>Published</dt><dd>${new Date(x.published_at).toLocaleString()}</dd>`;document.querySelector('#release-link').href=x.html_url}).catch(()=>{});
-</script></body></html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="ArtifactGate is an evidence-based admission and promotion gate for third-party container images.">
+  <title>ArtifactGate · Evidence before deployment</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <header class="hero">
+    <p class="eyebrow">PERSONAL REFERENCE PROJECT · CONTAINER SUPPLY-CHAIN ASSURANCE</p>
+    <h1>Evidence before deployment.</h1>
+    <p class="lede">ArtifactGate treats a third-party container as untrusted input until an exact, immutable image pair has enough evidence for a recorded promotion decision.</p>
+    <p class="principle">A trusted name is not provenance. An SBOM is not a verdict. A signature does not make unsafe content safe.</p>
+    <div class="actions"><a class="button" href="https://github.com/llody9977/artifactgate">View repository</a><a href="#evidence">Latest evidence</a></div>
+  </header>
+
+  <section>
+    <p class="kicker">THE PROBLEM</p>
+    <h2>Using a vendor image transfers risk into your environment</h2>
+    <p>A mutable tag can point to different bytes tomorrow. The image can contain vulnerable, malicious or poorly maintained components. Its upstream build history may be absent. A clean scan can become stale, and the application sidecar may carry a separate risk from the main image.</p>
+    <p>ArtifactGate does not assume that these uncertainties disappear. It makes them visible, applies policy to the evidence available now, and records the boundary of the decision.</p>
+  </section>
+
+  <section>
+    <p class="kicker">THE DECISION MODEL</p>
+    <h2>Six questions, one exact artifact pair</h2>
+    <div class="grid">
+      <article><span>01</span><h3>Source</h3><p>Did it come from an allowed upstream and an accepted version?</p></article>
+      <article><span>02</span><h3>Identity</h3><p>Which immutable OCI digests were actually assessed?</p></article>
+      <article><span>03</span><h3>Composition</h3><p>What does the digest-bound SPDX SBOM declare is inside?</p></article>
+      <article><span>04</span><h3>Risk</h3><p>What do CVE, KEV, EPSS, age, malware, secret and bounded runtime signals show?</p></article>
+      <article><span>05</span><h3>Decision</h3><p>Did policy allow promotion, or who accepted which expiring exception?</p></article>
+      <article><span>06</span><h3>Continuity</h3><p>Can deployment verify and monitor the same application and runner bytes?</p></article>
+    </div>
+  </section>
+
+  <section class="flow">
+    <p class="kicker">CONTROLLED PROMOTION</p>
+    <h2>Quarantine → assess → decide → attest → deploy → re-check</h2>
+    <p>The upstream image is never treated as internally trusted merely because it can be pulled. ArtifactGate resolves the digest first, evaluates the application and runner together, fails closed when required evidence is unknown, and promotes the accepted pair into a controlled namespace. Deployment verifies GitHub OIDC-backed attestations and pins both digests.</p>
+  </section>
+
+  <section>
+    <p class="kicker">WHAT TO LOOK OUT FOR</p>
+    <h2>Questions to ask before trusting any third-party image</h2>
+    <div class="checklist">
+      <article><h3>Publisher and upstream build</h3><p>Is the registry owner the expected supplier? Does the supplier sign the image or publish verifiable build provenance? If not, record the gap; digest pinning prevents drift but does not prove publisher identity.</p></article>
+      <article><h3>Mutable references</h3><p>Do not assess <code>latest</code> and later deploy whatever it becomes. Resolve a version to a digest first, and keep every report, SBOM and decision attached to that digest.</p></article>
+      <article><h3>Full workload boundary</h3><p>Check init containers, task runners and sidecars as separate artifacts. Trusting the main application while leaving its helper image mutable creates a gap in the same deployment.</p></article>
+      <article><h3>SBOM quality</h3><p>Check format, component identifiers, versions, dependency relationships, creation time and subject digest. An SBOM is an inventory claim, not proof of completeness or security.</p></article>
+      <article><h3>Vulnerability context</h3><p>Severity alone is not enough. Look for known exploitation, exploitation likelihood, finding age, available fixes and whether required evidence is missing. Do not turn “unknown” into “safe”.</p></article>
+      <article><h3>Runtime and configuration</h3><p>Static analysis cannot show every reachable path or unsafe deployment setting. Review privileges, capabilities, user identity, writable filesystems, exposed ports, secrets and network boundaries.</p></article>
+      <article><h3>Exception quality</h3><p>A waiver should name every accepted finding, explain the need and compensating controls, identify the reviewer, bind to exact digests and expire on a future date.</p></article>
+      <article><h3>Risk after promotion</h3><p>Evidence ages. Re-scan the deployed digest, watch KEV and vulnerability feeds, review expired exceptions and have a rollback or replacement path ready.</p></article>
+    </div>
+  </section>
+
+  <section>
+    <p class="kicker">WHERE TRUST AND RULES ARE DEFINED</p>
+    <h2>Policy is visible, version-controlled and reviewable</h2>
+    <div class="table-scroll"><table class="rule-table">
+      <thead><tr><th scope="col">Control</th><th scope="col">Current rule</th><th scope="col">Source of truth</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Trusted intake</th><td>Only <code>n8nio/n8n</code> and <code>n8nio/runners</code>; strict <code>x.y.z</code> versions. <code>latest</code> must resolve before use.</td><td><a href="https://github.com/llody9977/artifactgate/blob/main/policy/image-ingestion-policy.yml">image-ingestion-policy.yml</a></td></tr>
+        <tr><th scope="row">Vendor identity gap</th><td>Upstream signature verification is currently warning-only, with accepted risk and review date recorded in policy.</td><td><a href="https://github.com/llody9977/artifactgate/blob/main/policy/image-ingestion-policy.yml">vendor_signature</a></td></tr>
+        <tr><th scope="row">Automatic gate</th><td>Critical/high findings require review for a KEV match, age ≥30 days, EPSS ≥2%, or unknown required evidence.</td><td><a href="https://github.com/llody9977/artifactgate/blob/main/policy/vulnerability-gate-policy.yml">vulnerability-gate-policy.yml</a></td></tr>
+        <tr><th scope="row">Manual exception</th><td>The <code>trusted-promotion</code> environment requires every gated CVE, meaningful justification, compensating controls and a future expiry.</td><td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/workflows/image-promotion.yml">image-promotion.yml</a></td></tr>
+        <tr><th scope="row">Trusted outputs</th><td>Accepted images go to <code>artifactgate/n8n-trusted</code> and <code>artifactgate/n8n-runners-trusted</code>, with separate attestations.</td><td><a href="https://github.com/llody9977/artifactgate/blob/main/docs/signing-and-attestation.md">signing and attestation</a></td></tr>
+        <tr><th scope="row">Deployment admission</th><td>Both attestations must verify against owner <code>llody9977</code>; both images are deployed by digest.</td><td><a href="https://github.com/llody9977/artifactgate/blob/main/iac/n8n/install.sh">install.sh</a></td></tr>
+        <tr><th scope="row">Ongoing review</th><td>The latest promoted release is re-scanned weekly; policy regressions open a security issue.</td><td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/workflows/rescan.yml">rescan.yml</a></td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">Policy changes go through the same protected pull-request path as code. The readable YAML documents intent; the workflow and enrichment script enforce the executable decision.</p>
+  </section>
+
+  <section>
+    <p class="kicker">STANDARDS-INFORMED, NOT CERTIFIED</p>
+    <h2>Grounded in established supply-chain guidance</h2>
+    <div class="standards">
+      <article><h3><a href="https://csrc.nist.gov/pubs/sp/800/161/r1/upd1/final">NIST SP 800-161 Rev. 1</a></h3><p>Third-party technology is a supply-chain risk requiring due diligence, assessment, mitigation and continuing oversight.</p></article>
+      <article><h3><a href="https://csrc.nist.gov/pubs/sp/800/190/final">NIST SP 800-190</a></h3><p>Informs trusted-image handling, registry controls, vulnerability management and hardened container configuration.</p></article>
+      <article><h3><a href="https://csrc.nist.gov/pubs/sp/800/218/final">NIST SP 800-218</a></h3><p>Informs third-party component verification and the collection and protection of release integrity and provenance data.</p></article>
+      <article><h3><a href="https://csrc.nist.gov/pubs/sp/800/204/d/final">NIST SP 800-204D</a></h3><p>Frames how provenance, attestations, SBOMs and supply-chain controls fit into CI/CD.</p></article>
+      <article><h3><a href="https://slsa.dev/spec/v1.2/">SLSA v1.2</a></h3><p>Provides a model for provenance and verification. ArtifactGate claims no SLSA level for an upstream image it did not build.</p></article>
+    </div>
+  </section>
+
+  <section id="evidence" class="evidence">
+    <p class="kicker">PUBLIC EVIDENCE</p>
+    <h2>Latest retained promotion</h2>
+    <dl id="release"><dt>Status</dt><dd>Loading release evidence…</dd></dl>
+    <p><a id="release-link" href="https://github.com/llody9977/artifactgate/releases">Open release record</a></p>
+  </section>
+
+  <section>
+    <p class="kicker">VERIFY, DO NOT ASSUME</p>
+    <h2>Bind the decision to the bytes deployed</h2>
+    <pre><code>gh attestation verify oci://IMAGE@sha256:DIGEST -o llody9977</code></pre>
+    <p>Verify both the n8n application and external runner subjects, then deploy both by immutable digest. The promotion attestation proves that ArtifactGate's workflow handled those digests; it does not recreate missing provenance for the vendor's original build.</p>
+  </section>
+
+  <section class="boundary">
+    <p class="kicker">ASSURANCE BOUNDARY</p>
+    <h2>Promotion is a risk decision, not a security certificate</h2>
+    <p>A successful result means the exact pair passed the documented policy or a scoped, justified and expiring exception was approved. It does not mean vulnerability-free, compliant or suitable for every environment. SBOMs and scanner feeds may be incomplete or delayed. Runtime observations cover only exercised smoke-test paths, and “not observed” is not proof that vulnerable code is unreachable.</p>
+  </section>
+
+  <footer>© 2026 <a href="https://github.com/llody9977">llody9977</a> · <a href="https://github.com/llody9977/artifactgate/blob/main/LICENSE">Apache-2.0</a> · Personal and experimental · <a href="https://github.com/llody9977/artifactgate#disclaimer">Full disclaimer</a></footer>
+</main>
+<script>
+fetch('evidence.json').then(response => {
+  if (!response.ok) throw new Error('Evidence unavailable');
+  return response.json();
+}).then(release => {
+  const list = document.querySelector('#release');
+  list.replaceChildren();
+  const rows = [
+    ['Release', release.name || release.tag_name || 'Unnamed release'],
+    ['Published', release.published_at ? new Date(release.published_at).toLocaleString() : 'Unknown']
+  ];
+  for (const [label, value] of rows) {
+    const term = document.createElement('dt');
+    const detail = document.createElement('dd');
+    term.textContent = label;
+    detail.textContent = value;
+    list.append(term, detail);
+  }
+  if (release.html_url) document.querySelector('#release-link').href = release.html_url;
+}).catch(() => {
+  document.querySelector('#release').innerHTML = '<dt>Status</dt><dd>Release evidence is temporarily unavailable.</dd>';
+});
+</script>
+</body>
+</html>
