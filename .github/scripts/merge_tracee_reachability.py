@@ -151,28 +151,44 @@ def main():
     package_paths = load_package_paths(package_tsv)
     observed_paths, matched_events = load_observed_paths(tracee_events, target_container_id)
 
-    reachable_count = 0
+    observed_vulnerabilities_count = 0
+    observed_packages = {pkg for pkg, files in package_paths.items() if files.intersection(observed_paths)}
+    packages_observed_count = len(observed_packages)
+    packages_total_count = len(package_paths)
+    coverage_ratio = packages_observed_count / packages_total_count if packages_total_count > 0 else 0.0
+
     for result in report.get("Results", []):
         for vuln in result.get("Vulnerabilities") or []:
             package_name = vuln.get("PkgName", "")
             candidates = package_paths.get(package_name, set())
             evidence = sorted(path for path in candidates if path in observed_paths)
-            reachable = True if evidence else (False if candidates and matched_events > 0 else None)
-            if reachable is True:
-                reachable_count += 1
-            vuln["Reachable"] = reachable
-            vuln["Reachability"] = (
-                "Observed" if reachable is True
-                else "Not observed" if reachable is False
+            
+            # Default logic: True if loaded, False if not loaded (provided some events matched), None if no package files mapped
+            observed = True if evidence else (False if candidates and matched_events > 0 else None)
+            
+            # Downgrade rule: if package-level runtime observation coverage is < 20%, downgrade False to None (Unknown)
+            # because we cannot reliably assert 'Not observed' without a representative test run.
+            if observed is False and coverage_ratio < 0.20:
+                observed = None
+
+            if observed is True:
+                observed_vulnerabilities_count += 1
+            vuln["RuntimeObserved"] = observed
+            vuln["RuntimeObservation"] = (
+                "Observed" if observed is True
+                else "Not observed" if observed is False
                 else "Unknown"
             )
             vuln["ReachabilityEvidence"] = evidence[:5]
 
-    report["ReachabilitySummary"] = {
+    report["RuntimeObservationSummary"] = {
         "tracee_runtime_signal": "package_file_exec_or_load",
         "observed_paths_count": len(observed_paths),
         "matched_event_count": matched_events,
-        "reachable_vulnerability_count": reachable_count,
+        "packages_observed_count": packages_observed_count,
+        "packages_total_count": packages_total_count,
+        "packages_coverage_pct": round(coverage_ratio * 100, 2),
+        "observed_vulnerability_count": observed_vulnerabilities_count,
         "limitations": "A negative result means only that mapped package files were not observed during this smoke test; it does not prove code is unreachable.",
         "target_container_id": target_container_id[:12],
     }
@@ -185,7 +201,7 @@ def main():
         "Merged Tracee reachability:"
         f" {len(observed_paths)} observed paths,"
         f" {matched_events} matched events,"
-        f" {reachable_count} reachable vulnerabilities"
+        f" {observed_vulnerabilities_count} observed vulnerabilities"
     )
 
 

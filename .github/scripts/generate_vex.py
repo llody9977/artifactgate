@@ -38,7 +38,7 @@ def main():
             vuln_id = vul.get("VulnerabilityID")
             pkg_name = vul.get("PkgName")
             gate_decision = vul.get("GateDecision")
-            reachable = vul.get("Reachability", "Unknown")
+            reachable = vul.get("RuntimeObservation", "Unknown")
             
             if not vuln_id:
                 continue

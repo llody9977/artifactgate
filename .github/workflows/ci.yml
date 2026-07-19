@@ -171,10 +171,10 @@ jobs:
         run: |
           python3 .github/scripts/generate_summary.py trivy-report.enriched.json kev.json ci-tracee-test
 
-          jq -e '.ReachabilitySummary.matched_event_count > 0' trivy-report.tracee.json > /dev/null
-          jq -e '[.Results[]?.Vulnerabilities[]? | has("Reachable")] | all' trivy-report.enriched.json > /dev/null
-          jq -e '[.Results[]?.Vulnerabilities[]? | .Reachability] | length > 0 and all(. == "Observed" or . == "Not observed" or . == "Unknown")' trivy-report.enriched.json > /dev/null
-          grep -q "Reachability" "$GITHUB_STEP_SUMMARY"
+          jq -e '.RuntimeObservationSummary.matched_event_count > 0' trivy-report.tracee.json > /dev/null
+          jq -e '[.Results[]?.Vulnerabilities[]? | has("RuntimeObserved")] | all' trivy-report.enriched.json > /dev/null
+          jq -e '[.Results[]?.Vulnerabilities[]? | .RuntimeObservation] | length > 0 and all(. == "Observed" or . == "Not observed" or . == "Unknown")' trivy-report.enriched.json > /dev/null
+          grep -q "Runtime Obs." "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Tracee integration artifacts
         if: always()

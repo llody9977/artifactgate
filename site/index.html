@@ -51,14 +51,14 @@
       <article>
         <h3>Registry Takeover Risk</h3>
         <p>Is the upstream registry account secure? Threat actors compromise maintainer accounts to distribute malicious updates. <br>
-        <em>Boundary:</em> <strong>Warning-Only</strong>. The gate detects signature presence, but cannot verify the original publisher account's security. We mitigate this by requiring cryptographic signing where available. <br>
-        <em>Incident:</em> The <strong>ua-parser-js library hijack (2021)</strong>, where compromised developer credentials were used to publish packages containing cryptomining malware (<a href="https://nvd.nist.gov/vuln/detail/CVE-2021-42048">CVE-2021-42048</a>).</p>
+        <em>Boundary:</em> <strong>Warning-Only</strong>. The gate warns on missing signatures, but cannot verify the original publisher account's security. <br>
+        <em>Incident:</em> The <strong>ua-parser-js library hijack (2021)</strong>, where compromised developer credentials were used to publish packages containing cryptomining malware (<a href="https://nvd.nist.gov/vuln/detail/CVE-2021-4229">CVE-2021-4229</a>).</p>
       </article>
       <article>
         <h3>Silent Tag Drift Risk</h3>
         <p>Are we pulling mutable references? Relying on tags like <code>latest</code> allows upstream code to change without your knowledge. <br>
         <em>Boundary:</em> <strong>Enforced Prevention</strong>. The ingestion gate requires resolving version tags to immutable digests first. Pinned digests cannot drift. <br>
-        <em>Incident:</em> The <strong>Docker Hub spoofing campaign (2023)</strong>, where threat actors pushed millions of drifted, malicious images spoofing legitimate software to execute cryptominers (<a href="https://sysdig.com/blog/malicious-images-docker-hub/">Sysdig Threat Report</a>).</p>
+        <em>Incident:</em> The <strong>JFrog Docker Hub poisoning campaign (2024)</strong>, where threat actors uploaded over 4 million malicious, spoofed/drifted repositories to Docker Hub to distribute phishing scams and malware (<a href="https://jfrog.com/blog/malicious-images-docker-hub/">JFrog Research</a>).</p>
       </article>
       <article>
         <h3>Socially Engineered Logic Bombs</h3>
@@ -69,13 +69,13 @@
       <article>
         <h3>Pipeline Takeover & Token Theft</h3>
         <p>Can the container compromise the build pipeline? A malicious dependency can execute install scripts to harvest secrets from ambient environment variables. <br>
-        <em>Boundary:</em> <strong>Partial Prevention</strong>. We run workflows with read-only GitHub OIDC tokens and isolate dependencies, but any build-time execution risks exfiltrating ambient variables if exposed. <br>
+        <em>Boundary:</em> <strong>Partial Prevention</strong>. We use least-privilege, job-scoped tokens — the scanning job is read-only, and write scopes are confined to the promotion jobs. <br>
         <em>Incident:</em> The <strong>Codecov Bash Uploader compromise (2021)</strong>, where a compromised script silently exfiltrated CI environment credentials (<a href="https://www.cisa.gov/news-events/alerts/2021/04/27/compromise-codecov-bash-uploader-script">CISA Alert AA21-117A</a>).</p>
       </article>
       <article>
         <h3>Container Escape & Privileges</h3>
         <p>What is the worst-case blast radius? Running as root or with high capabilities enables container breakouts to the host. <br>
-        <em>Boundary:</em> <strong>Enforced by IaC Policy</strong>. The gate scans deployment manifests for insecure capabilities or root execution and blocks them. <br>
+        <em>Boundary:</em> <strong>Enforced at Merge</strong>. The gate scans deployment manifests for insecure configurations during repository merge checks, blocking insecure configurations from entering main (not at promotion). <br>
         <em>Incident:</em> The <strong>runc container escape (2024)</strong>, where a runtime file descriptor leak allowed attackers to break container boundaries and gain host root access (<a href="https://nvd.nist.gov/vuln/detail/CVE-2024-21626">CVE-2024-21626</a>).</p>
       </article>
       <article>
@@ -88,30 +88,140 @@
         <h3>Sidecar & Runner Exposure</h3>
         <p>Are we verifying the entire bundle? Hardening the main application while leaving task runners or sidecars unverified leaves a backdoor. <br>
         <em>Boundary:</em> <strong>Enforced</strong>. The policy configures that all companion runner images must be resolved to digests and evaluated under the same promotion rules. <br>
-        <em>Incident:</em> Companion containers (such as unpinned local databases or runners) serving as entry points to otherwise secure workloads.</p>
+        <em>Rationale:</em> Companion containers (such as unpinned local databases or runners) share the host's execution environment and can serve as entry points to otherwise secure workloads.</p>
       </article>
       <article>
         <h3>Waiver & Exception Decay</h3>
         <p>Are exceptions auditable and expiring? Permanent exceptions become permanent backdoors. <br>
         <em>Boundary:</em> <strong>Enforced</strong>. The workflow requires exceptions to target specific CVEs, document compensating controls, and declare an expiry date. <br>
-        <em>Incident:</em> Stale, unmonitored security exceptions leading to compromise of legacy enterprise services.</p>
+        <em>Incident:</em> The <strong>Equifax breach (2017)</strong>, where CVE-2017-5638 in Apache Struts was known and patched upstream, but exposure persisted for months due to failed remediation and exception tracking (147 million records compromised).</p>
+      </article>
+      <article>
+        <h3>Compromised Registry Namespace</h3>
+        <p>If an attacker gains write access to our GHCR namespace, can they swap the trusted image? <br>
+        <em>Boundary:</em> <strong>Enforced by Attestation</strong>. The deployment installer does not trust registry name presence; it cryptographically verifies build attestations generated by our OIDC-backed workflow and pins the exact digests. <br>
+        <em>Rationale:</em> Attackers who compromise repository registry accounts cannot bypass admission control without also stealing the OIDC-backed signing credentials of the GitHub Actions runner.</p>
+      </article>
+      <article>
+        <h3>Third-Party Action Compromise</h3>
+        <p>Can third-party actions in GitHub workflows be updated or retagged to exfiltrate secrets or inject backdoors? <br>
+        <em>Boundary:</em> <strong>Enforced Prevention</strong>. All actions used in our promotion and CI workflows are pinned to immutable commit SHAs rather than mutable version tags. <br>
+        <em>Incident:</em> The <strong>tj-actions/changed-files compromise (March 2025)</strong>, where a compromised, retagged action leaked CI secrets across thousands of downstream repositories.</p>
+      </article>
+      <article>
+        <h3>Poisoned Pipeline Execution (PPE)</h3>
+        <p>Can a malicious pull request edit the gate's policy files (like <code>vulnerability-gate-policy.yml</code>) to weaken promotion thresholds? <br>
+        <em>Boundary:</em> <strong>Enforced by Branch Protection</strong>. Branch protection rules, required review approvals, and strict CODEOWNERS constraints prevent modifications to the <code>.github/</code> and <code>policy/</code> folders from being merged without administrator review. <br>
+        <em>Rationale:</em> Enforces segregation of duties by blocking pull requests from auto-merging policy modifications.</p>
+      </article>
+      <article>
+        <h3>Verification Bypass at Deploy</h3>
+        <p>Can developers deploy promoted images in `--insecure-lab-mode`, bypassing attestation checks entirely? <br>
+        <em>Boundary:</em> <strong>Structural Limitation</strong>. The installer allows disabling checks for local development. In production, this escape hatch must be blocked by container admission controllers (like Kyverno or Gatekeeper). <br>
+        <em>Rationale:</em> Bypassing verification in production destroys the entire chain of trust established by the promotion gate.</p>
+      </article>
+      <article>
+        <h3>Embedded Credentials in Vendor Image</h3>
+        <p>Do upstream vendors accidentally bake credentials, private keys, or API tokens into their public container layers? <br>
+        <em>Boundary:</em> <strong>Enforced Prevention</strong>. The gate runs a secret scanner (<code>trivy image --scanners secret</code>) and fails the promotion if any credentials are found. <br>
+        <em>Rationale:</em> Blocking hardcoded secrets at the gate prevents leaked vendor credentials from being deployed to production environments.</p>
       </article>
     </div>
-  </section>
-
   <section>
-    <p class="kicker">WHERE TRUST AND RULES ARE DEFINED</p>
-    <h2>Policy is visible, version-controlled and reviewable</h2>
+    <p class="kicker">CONTROL INVENTORY</p>
+    <h2>Active Pipeline Control Mapping</h2>
     <div class="table-scroll"><table class="rule-table">
-      <thead><tr><th scope="col">Control</th><th scope="col">Current rule</th><th scope="col">Source of truth</th></tr></thead>
+      <thead>
+        <tr>
+          <th scope="col">Control</th>
+          <th scope="col">Risk Addressed</th>
+          <th scope="col">Function</th>
+          <th scope="col">Control Point</th>
+          <th scope="col">Enforcement</th>
+          <th scope="col">Source of Truth</th>
+        </tr>
+      </thead>
       <tbody>
-        <tr><th scope="row">Trusted intake</th><td>Only <code>n8nio/n8n</code> and <code>n8nio/runners</code>; strict <code>x.y.z</code> versions. <code>latest</code> must resolve before use.</td><td><a href="https://github.com/llody9977/artifactgate/blob/main/policy/image-ingestion-policy.yml">image-ingestion-policy.yml</a></td></tr>
-        <tr><th scope="row">Vendor identity gap</th><td>Upstream signature verification is currently warning-only, with accepted risk and review date recorded in policy.</td><td><a href="https://github.com/llody9977/artifactgate/blob/main/policy/image-ingestion-policy.yml">vendor_signature</a></td></tr>
-        <tr><th scope="row">Automatic gate</th><td>Critical/high findings require review for a KEV match, age ≥30 days, EPSS ≥2%, or unknown required evidence.</td><td><a href="https://github.com/llody9977/artifactgate/blob/main/policy/vulnerability-gate-policy.yml">vulnerability-gate-policy.yml</a></td></tr>
-        <tr><th scope="row">Manual exception</th><td>Requires detailed justification and compensating controls, generating cryptographically signed <code>OpenVEX</code> exception files.</td><td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/workflows/image-promotion.yml">image-promotion.yml</a></td></tr>
-        <tr><th scope="row">Trusted outputs</th><td>Accepted images go to <code>artifactgate/n8n-trusted</code> and <code>artifactgate/n8n-runners-trusted</code>, with separate attestations.</td><td><a href="https://github.com/llody9977/artifactgate/blob/main/docs/signing-and-attestation.md">signing and attestation</a></td></tr>
-        <tr><th scope="row">Deployment admission</th><td>Both attestations must verify against owner <code>llody9977</code>; both images are deployed by digest.</td><td><a href="https://github.com/llody9977/artifactgate/blob/main/iac/n8n/install.sh">install.sh</a></td></tr>
-        <tr><th scope="row">Ongoing review</th><td>The latest promoted release is re-scanned weekly; policy regressions open a security issue.</td><td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/workflows/rescan.yml">rescan.yml</a></td></tr>
+        <tr>
+          <th scope="row">Source Ingestion Allowlist</th>
+          <td>Rogue tag intake & untrusted vendors</td>
+          <td>Preventive</td>
+          <td>Intake</td>
+          <td><strong>Blocking</strong></td>
+          <td><a href="https://github.com/llody9977/artifactgate/blob/main/policy/image-ingestion-policy.yml">image-ingestion-policy.yml</a></td>
+        </tr>
+        <tr>
+          <th scope="row">OCI Digest Resolution</th>
+          <td>Tag drift & tag poisoning</td>
+          <td>Preventive</td>
+          <td>Intake</td>
+          <td><strong>Blocking</strong></td>
+          <td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/workflows/image-promotion.yml">image-promotion.yml</a></td>
+        </tr>
+        <tr>
+          <th scope="row">Trivy Malware & Secret Scan</th>
+          <td>Embedded secrets, keys, and malware</td>
+          <td>Preventive</td>
+          <td>Promotion Gate</td>
+          <td><strong>Blocking</strong></td>
+          <td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/workflows/image-promotion.yml">image-promotion.yml</a></td>
+        </tr>
+        <tr>
+          <th scope="row">OWASP ZAP DAST Scan</th>
+          <td>Runtime network / HTTP vulnerabilities</td>
+          <td>Preventive</td>
+          <td>Promotion Gate</td>
+          <td><strong>Blocking</strong></td>
+          <td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/scripts/run_tracee_reachability.sh">run_tracee_reachability.sh</a></td>
+        </tr>
+        <tr>
+          <th scope="row">Trivy Licence Scan</th>
+          <td>Copyleft licence liabilities</td>
+          <td>Detective</td>
+          <td>Promotion Gate</td>
+          <td>Advisory</td>
+          <td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/workflows/image-promotion.yml">image-promotion.yml</a></td>
+        </tr>
+        <tr>
+          <th scope="row">Runtime eBPF Observation</th>
+          <td>Logic bombs & active execution paths</td>
+          <td>Detective</td>
+          <td>Promotion Gate</td>
+          <td><strong>Blocking</strong> (Escalated on Observed)</td>
+          <td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/scripts/merge_tracee_reachability.py">merge_tracee_reachability.py</a></td>
+        </tr>
+        <tr>
+          <th scope="row">Vulnerability Risk Enrichment</th>
+          <td>Vulnerability exploitation (KEV/EPSS/Age)</td>
+          <td>Preventive</td>
+          <td>Promotion Gate</td>
+          <td><strong>Blocking</strong></td>
+          <td><a href="https://github.com/llody9977/artifactgate/blob/main/policy/vulnerability-gate-policy.yml">vulnerability-gate-policy.yml</a></td>
+        </tr>
+        <tr>
+          <th scope="row">Actions SHA Pinning & Tokens</th>
+          <td>Pipeline takeover & third-party compromises</td>
+          <td>Preventive</td>
+          <td>Build / Pipeline</td>
+          <td><strong>Blocking</strong></td>
+          <td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/workflows/ci.yml">Workflow Configurations</a></td>
+        </tr>
+        <tr>
+          <th scope="row">OIDC Provenance & SBOM</th>
+          <td>Registry bypass & image swapping</td>
+          <td>Preventive</td>
+          <td>Attestation / Deploy</td>
+          <td><strong>Blocking</strong></td>
+          <td><a href="https://github.com/llody9977/artifactgate/blob/main/iac/n8n/install.sh">install.sh</a></td>
+        </tr>
+        <tr>
+          <th scope="row">Continuous Re-Scanning</th>
+          <td>Post-promotion security decay</td>
+          <td>Corrective</td>
+          <td>Continuous</td>
+          <td><strong>Blocking</strong> (Opens Issues)</td>
+          <td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/workflows/rescan.yml">rescan.yml</a></td>
+        </tr>
       </tbody>
     </table></div>
     <p class="note">Policy changes go through the same protected pull-request path as code. The readable YAML documents intent; the workflow and enrichment script enforce the executable decision.</p>
@@ -123,9 +233,10 @@
     <div class="standards">
       <article><h3><a href="https://csrc.nist.gov/pubs/sp/800/161/r1/upd1/final">NIST SP 800-161 Rev. 1</a></h3><p>Third-party technology is a supply-chain risk requiring due diligence, assessment, mitigation and continuing oversight.</p></article>
       <article><h3><a href="https://csrc.nist.gov/pubs/sp/800/190/final">NIST SP 800-190</a></h3><p>Informs trusted-image handling, registry controls, vulnerability management and hardened container configuration.</p></article>
-      <article><h3><a href="https://csrc.nist.gov/pubs/sp/800/218/final">NIST SP 800-218</a></h3><p>Informs third-party component verification and the collection and protection of release integrity and provenance data.</p></article>
+      <article><h3><a href="https://csrc.nist.gov/pubs/sp/800/218/final">NIST SP 800-218</a></h3><p>Informs third-party component verification (practices PO.1.3, PO.3.2, PW.4.1, PW.4.4, RV.1.1, RV.1.3).</p></article>
       <article><h3><a href="https://csrc.nist.gov/pubs/sp/800/204/d/final">NIST SP 800-204D</a></h3><p>Frames how provenance, attestations, SBOMs and supply-chain controls fit into CI/CD.</p></article>
-      <article><h3><a href="https://slsa.dev/spec/v1.2/">SLSA v1.2</a></h3><p>Provides a model for provenance and verification. ArtifactGate claims no SLSA level for an upstream image it did not build.</p></article>
+      <article><h3><a href="https://slsa.dev/spec/v1.2/">SLSA v1.2</a></h3><p>Provides a model for provenance. ArtifactGate's promotion steps exhibit SLSA Build L2/L3 properties.</p></article>
+      <article><h3>EU CRA & NTIA Elements</h3><p>Aligns with NTIA Minimum Elements for an SBOM and EU Cyber Resilience Act VEX vulnerability reporting rules.</p></article>
     </div>
   </section>
 

@@ -109,7 +109,7 @@ def main():
     lines.append("")
 
     if vulns:
-        lines.append("| CVE | Severity | Published | Age | Package | Version | Fixed In | Reachability | KEV | EPSS | EPSS Risk | Gate |")
+        lines.append("| CVE | Severity | Published | Age | Package | Version | Fixed In | Runtime Obs. | KEV | EPSS | EPSS Risk | Gate |")
         lines.append("| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |")
         for v in vulns:
             cve_id = v.get("VulnerabilityID", "")
@@ -120,7 +120,7 @@ def main():
             pkg = v.get("PkgName", "")
             installed = v.get("InstalledVersion", "")
             fixed = v.get("FixedVersion") or "None"
-            reachable = v.get("Reachability", "Unknown")
+            reachable = v.get("RuntimeObservation", "Unknown")
             kev = "\u2705 Yes" if v.get("KevHit") or cve_id in kev_ids else "No"
             epss = fmt_epss(v.get("EpssPercent"))
             epss_risk = v.get("EpssRisk", "-")

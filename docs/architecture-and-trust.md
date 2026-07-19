@@ -29,20 +29,27 @@ digest establishes byte identity; the SBOM describes known composition; scanning
 enrichment support a risk decision; the ArtifactGate attestation records the promotion
 path; and runtime hardening limits impact. None is a substitute for the others.
 
-## Threat Model Mapping
+## Control Inventory and Threat Mapping
 
-| Threat pattern | Why it matters here | Primary control in this repo |
-| :--- | :--- | :--- |
-| Dependency chain abuse | A trusted vendor image can still introduce risky or newly vulnerable components | digest pinning, Trivy scan, KEV/EPSS/age enrichment |
-| Artifact substitution or tag drift | A mutable upstream tag can change without notice | resolve and pin immutable digest before promotion |
-| Prohibitive licences | Vendor images may introduce strict copyleft licences | Trivy licence reporting for human review |
-| Runtime misconfigurations | Static scans miss exposed runtime HTTP flaws | OWASP ZAP baseline DAST during smoke run |
-| IaC and script weaknesses | Deployment files can undermine otherwise good image controls | Checkov and Shellcheck in CI |
-| Insufficient flow control | Higher-risk images should not move through the same path as cleaner ones | manual approval via `trusted-promotion` |
-| Weak artifact integrity evidence | Teams need proof, not only a passing scan | provenance, SBOM, and machine-readable OpenVEX attestation |
-| Weak pipeline identity model | Long-lived publish credentials expand exposure | ephemeral `GITHUB_TOKEN` and OIDC-backed attestation |
-| Insufficient day-2 monitoring | Risk changes after promotion | scheduled re-scan of the latest promoted release |
-| Runtime over-privilege | A compromised workload can still do damage after deploy | hardened Docker runtime settings |
+The following table maps the specific security controls implemented in this repository to the risks they address, their execution context, enforcement behavior, and alignment with industry standards.
+
+| Control / Verification | Risk Addressed | Function | Control Point | Enforcement | Source File | Standards Mapping |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Source Ingestion Allowlist** | Rogue tag intake & untrusted vendors | Preventive | Intake | **Blocking** | [`image-ingestion-policy.yml`](/policy/image-ingestion-policy.yml) | OWASP CICD-SEC-3<br>NIST SSDF PO.1.3, PW.4.1<br>NIST SP 800-53 SR-3 |
+| **OCI Digest Resolution** | Tag drift & tag poisoning | Preventive | Intake | **Blocking** | [`image-promotion.yml`](/.github/workflows/image-promotion.yml) | OWASP CICD-SEC-3<br>NIST SSDF PW.4.4<br>NIST SP 800-53 SR-11 / CM-14 |
+| **Trivy Malware Scan** | Malware injection in vendor layers | Detective | Promotion Gate | **Blocking** | [`image-promotion.yml`](/.github/workflows/image-promotion.yml#L189) | OWASP CICD-SEC-3<br>NIST SSDF PW.4.1<br>NIST SP 800-53 SR-3 |
+| **Trivy Secret Scan** | Embedded credentials & API keys | Preventive | Promotion Gate | **Blocking** | [`image-promotion.yml`](/.github/workflows/image-promotion.yml#L179) | OWASP CICD-SEC-3<br>NIST SSDF PW.4.1<br>NIST SP 800-53 SR-3 |
+| **Trivy Licence Scan** | Copyleft licence liabilities | Detective | Promotion Gate | Advisory | [`image-promotion.yml`](/.github/workflows/image-promotion.yml#L202) | OWASP CICD-SEC-3<br>NIST SSDF PO.3.2<br>NIST SP 800-53 SR-3 |
+| **OWASP ZAP DAST Scan** | Runtime HTTP flaws & misconfigurations | Preventive | Promotion Gate | **Blocking** | [`run_tracee_reachability.sh`](/.github/scripts/run_tracee_reachability.sh#L77-L85) | OWASP CICD-SEC-3<br>NIST SSDF RV.1.1<br>NIST SP 800-53 SR-3 |
+| **Tracee eBPF Observation** | Socially engineered logic bombs & call-graph loading | Detective | Promotion Gate | **Blocking** (Gated on `RuntimeObserved` / Coverage) | [`merge_tracee_reachability.py`](/.github/scripts/merge_tracee_reachability.py) | OWASP CICD-SEC-3<br>NIST SSDF RV.1.3<br>NIST SP 800-53 SR-11 |
+| **Age, KEV & EPSS Enrichment** | Active CVE exploitation & zero-days | Preventive | Promotion Gate | **Blocking** | [`enrich_findings.py`](/.github/scripts/enrich_findings.py) | OWASP CICD-SEC-3<br>NIST SSDF RV.1.1<br>NIST SP 800-53 SR-3 |
+| **Waiver Expiry Enforcement** | Waiver & Exception decay | Preventive | Exception / Waiver | **Blocking** | [`image-promotion.yml`](/.github/workflows/image-promotion.yml) | OWASP CICD-SEC-1<br>NIST SSDF PW.4.1<br>NIST SP 800-53 SR-3 |
+| **GitHub Actions SHA Pinning** | Third-party action dependency hijacking | Preventive | Build / Pipeline | **Blocking** | All workflow manifests | OWASP CICD-SEC-3<br>NIST SSDF PW.4.4<br>NIST SP 800-53 SR-3 |
+| **Scoped Token Permissions** | CI runner takeover & token theft | Preventive | Build / Pipeline | **Blocking** | Workflow permissions blocks | OWASP CICD-SEC-6<br>NIST SSDF PW.4.1<br>NIST SP 800-53 SR-3 |
+| **OIDC Provenance & SBOM Attestation** | Namespace compromise & image swapping | Preventive | Attestation / Deploy | **Blocking** | [`install.sh`](/iac/n8n/install.sh) | OWASP CICD-SEC-3<br>NIST SSDF PW.4.4<br>NIST SP 800-53 SR-4 / CM-14 |
+| **Checkov & ShellCheck** | IaC misconfiguration & privilege escalation | Preventive | Build (PR Merge) | **Blocking** | [`ci.yml`](/.github/workflows/ci.yml) | OWASP CICD-SEC-1<br>NIST SSDF PW.4.1<br>NIST SP 800-53 SR-3 |
+| **CodeQL Scan** | Local code vulnerabilities | Detective | Build (PR Merge) | **Blocking** | [`codeql.yml`](/.github/workflows/codeql.yml) | OWASP CICD-SEC-1<br>NIST SSDF PW.4.1<br>NIST SP 800-53 SR-3 |
+| **Scheduled Re-Scanning** | Post-promotion security decay | Corrective | Continuous | **Blocking** (Opens Issues) | [`rescan.yml`](/.github/workflows/rescan.yml) | OWASP CICD-SEC-9<br>NIST SSDF RV.1.1<br>NIST SP 800-53 SR-11 |
 
 ## Pipeline Architecture
 
@@ -121,52 +128,44 @@ Examples in this repo:
 
 ### NIST SP 800-218 (SSDF)
 
-Useful here for third-party component verification and collecting provenance data for
-release components. ArtifactGate is a consumer and promoter of the example vendor image;
-it does not claim to implement the vendor's development lifecycle.
+Useful here for third-party component verification and collecting provenance data for release components. ArtifactGate aligns with specific practices for the consumer/promoter phase:
+- **PO.1.3 & PW.4.1**: Specifying and validating third-party software components (Source allowlists, Trivy malware/secret/vulnerability checks).
+- **PO.3.2**: Evaluating licensing risk (Trivy licence reporting).
+- **PW.4.4**: Verifying the integrity of acquired software (Digest pinning, OIDC provenance verification).
+- **RV.1.1 & RV.1.3**: Bounded runtime observation and vulnerability checking (Tracee eBPF monitoring, OWASP ZAP DAST scans).
 
 ### OWASP Top 10 CI/CD Security Risks
 
 Useful here for framing the pipeline as an attack surface instead of only a delivery mechanism.
-
-Examples in this repo:
-
-- workflow separation
-- manual approval for higher-risk paths
-- digest pinning
-- artifact evidence and release traceability
+- **CICD-SEC-1 (PPE)**: Defended via branch protections and required code review on workflows and policies.
+- **CICD-SEC-3 (Dependency Chain Abuse)**: Prevented via digest pinning, Trivy scanning, and Actions commit SHA pinning.
+- **CICD-SEC-6 (Insufficient Credential Hygiene)**: Mitigated by using ephemeral GitHub OIDC tokens instead of static credentials.
+- **CICD-SEC-9 (Inadequate System Monitoring)**: Addressed via weekly scheduled re-scans of promoted container digests.
 
 ### NIST SP 800-53
 
-Useful here for the control vocabulary behind access control, integrity, auditability, and least privilege.
-
-Examples in this repo:
-
-- policy-as-code
-- approval gates
-- audit-friendly release evidence
-- hardened runtime defaults
+Useful here for specifying supply-chain and component controls:
+- **SR-3 (Supply Chain Controls)**: Intake allowed list and Trivy scanners for secrets, malware, and CVEs.
+- **SR-4 (Provenance)**: Ephemeral Actions OIDC provenance signing.
+- **SR-11 (Component Authenticity)**: Enforced via cryptographic verification of build-time OIDC attestations at deploy.
+- **CM-14 (Signed Components)**: Verification of container image signatures and machine-readable OpenVEX documents.
 
 ### NIST SP 800-204D
 
-Useful here for understanding how supply-chain controls fit into a DevSecOps pipeline.
+Useful here for understanding how supply-chain controls fit into a DevSecOps pipeline:
+- Policy-driven intake rules and gates.
+- Artifact-centric promotion decisions.
+- Ongoing re-scan of active promoted releases.
 
-Examples in this repo:
+### SLSA (Supply-chain Levels for Software Artifacts)
 
-- policy-driven intake
-- artifact-centric promotion decisions
-- ongoing re-scan of the active promoted release
+ArtifactGate's promotion provenance exhibits **SLSA Build L2/L3 properties** for the promotion step (hosted, ephemeral build platform with OIDC identities). It makes no SLSA claim about the upstream vendor's original build, which it did not perform and cannot verify.
 
-### SLSA
+### EU Cyber Resilience Act (CRA) & NTIA Minimum Elements
 
-Useful here for reasoning about provenance, artifact integrity, and promotion trust.
-
-Examples in this repo:
-
-- immutable digest pinning
-- provenance attestation
-- SBOM attestation
-- release evidence tied to the promoted image digest
+Useful here for ensuring compliance with emerging digital supply chain regulations:
+- **NTIA Minimum Elements for an SBOM**: Enforced via Trivy-generated SPDX SBOMs containing component details, dependencies, and relationship links.
+- **EU CRA (Vulnerability Disclosure and VEX)**: ArtifactGate generates machine-readable **OpenVEX** documents mapping to vulnerability scanning data, establishing an automated mechanism to declare product vulnerability status.
 
 ## Docker Hardening
 
