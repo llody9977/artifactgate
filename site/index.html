@@ -12,7 +12,8 @@
   <header class="hero">
     <p class="eyebrow">PERSONAL REFERENCE PROJECT · CONTAINER SUPPLY-CHAIN ASSURANCE</p>
     <h1>Evidence before deployment.</h1>
-    <p class="lede">ArtifactGate treats a third-party container as untrusted input until an exact, immutable image pair has enough evidence for a recorded promotion decision.</p>
+    <p class="lede">ArtifactGate treats a third-party container as untrusted input until an exact, immutable image pair has enough evidence for a recorded promotion decision. <br>
+    <em>Note: Upstream signature verification is warning-only; since vendors do not sign these images, this remains the primary identity gap in the trust chain.</em></p>
     <p class="principle">A trusted name is not provenance. An SBOM is not a verdict. A signature does not make unsafe content safe.</p>
     <div class="actions"><a class="button" href="https://github.com/llody9977/artifactgate">View repository</a><a href="#evidence">Latest evidence</a></div>
   </header>
@@ -31,8 +32,8 @@
       <article><span>01</span><h3>Source</h3><p>Did it come from an allowed upstream and an accepted version?</p></article>
       <article><span>02</span><h3>Identity</h3><p>Which immutable OCI digests were actually assessed?</p></article>
       <article><span>03</span><h3>Composition</h3><p>What does the digest-bound SPDX SBOM declare is inside?</p></article>
-      <article><span>04</span><h3>Risk</h3><p>What do CVE, KEV, EPSS, age, malware, secret and bounded runtime signals show?</p></article>
-      <article><span>05</span><h3>Decision</h3><p>Did policy allow promotion, or who accepted which expiring exception?</p></article>
+      <article><span>04</span><h3>Risk</h3><p>What do CVE, KEV, EPSS, age, malware, secret, OpenVEX and bounded runtime signals show?</p></article>
+      <article><span>05</span><h3>Decision</h3><p>Did policy allow promotion, or did we sign expiring OpenVEX exception statements?</p></article>
       <article><span>06</span><h3>Continuity</h3><p>Can deployment verify and monitor the same application and runner bytes?</p></article>
     </div>
   </section>
@@ -47,14 +48,54 @@
     <p class="kicker">WHAT TO LOOK OUT FOR</p>
     <h2>Questions to ask before trusting any third-party image</h2>
     <div class="checklist">
-      <article><h3>Registry Takeover Risk</h3><p>Is the upstream registry account secure? Threat actors compromise maintainers to distribute malicious updates. *Example:* The <strong>TanStack supply chain attack (2026)</strong> and <strong>Shai-Hulud npm worm (2025)</strong> hijacked accounts to distribute token-harvesting malware.</p></article>
-      <article><h3>Silent Tag Drift Risk</h3><p>Are we pulling mutable references? Relying on tags like <code>latest</code> allows upstream code to change without your knowledge. *Example:* The <strong>Axios npm compromise (2026)</strong> published malicious releases that infected build environments instantly before remediation.</p></article>
-      <article><h3>Socially Engineered Logic Bombs</h3><p>Is the codebase immune to malicious contributors? A malicious maintainer can spend years introducing obfuscated backdoors that static CVE scans miss. *Example:* The <strong>XZ Utils backdoor (CVE-2024-3094)</strong> bypassed SSH authentication using hidden build-stage payloads.</p></article>
-      <article><h3>Pipeline Takeover & Token Theft</h3><p>Can the container compromise the build pipeline? A malicious dependency can execute install scripts to steal environment variables. *Example:* The <strong>Mini Shai-Hulud attack (2026)</strong> exfiltrated CI tokens and cloud keys from major AI companies.</p></article>
-      <article><h3>Container Escape & Privileges</h3><p>What is the worst-case blast radius? Running as root or with host capabilities enables host takeover. *Example:* Escape vulnerabilities like <strong>CVE-2024-21626 (runc)</strong> let compromised containers escape to the host node.</p></article>
-      <article><h3>Post-Promotion Security Decay</h3><p>How do we handle new zero-days? A clean image decays as new vulnerabilities are discovered. *Example:* The <strong>Cleo File Transfer exploitation (2025)</strong> weaponized zero-days before patches or detection rules were published.</p></article>
-      <article><h3>Sidecar & Runner Exposure</h3><p>Are we verifying the entire bundle? Hardening the main app while leaving task runners or sidecars unverified leaves a backdoor. *Example:* Compromised companion containers frequently serve as entry points to otherwise secure workloads.</p></article>
-      <article><h3>Waiver & Exception Decay</h3><p>Are exceptions auditable and expiring? Permanent exceptions become permanent backdoors. A secure waiver must accept specific CVEs on exact digests, justify compensating controls, and expire.</p></article>
+      <article>
+        <h3>Registry Takeover Risk</h3>
+        <p>Is the upstream registry account secure? Threat actors compromise maintainer accounts to distribute malicious updates. <br>
+        <em>Boundary:</em> <strong>Warning-Only</strong>. The gate detects signature presence, but cannot verify the original publisher account's security. We mitigate this by requiring cryptographic signing where available. <br>
+        <em>Incident:</em> The <strong>ua-parser-js library hijack (2021)</strong>, where compromised developer credentials were used to publish packages containing cryptomining malware (<a href="https://nvd.nist.gov/vuln/detail/CVE-2021-42048">CVE-2021-42048</a>).</p>
+      </article>
+      <article>
+        <h3>Silent Tag Drift Risk</h3>
+        <p>Are we pulling mutable references? Relying on tags like <code>latest</code> allows upstream code to change without your knowledge. <br>
+        <em>Boundary:</em> <strong>Enforced Prevention</strong>. The ingestion gate requires resolving version tags to immutable digests first. Pinned digests cannot drift. <br>
+        <em>Incident:</em> The <strong>Docker Hub spoofing campaign (2023)</strong>, where threat actors pushed millions of drifted, malicious images spoofing legitimate software to execute cryptominers (<a href="https://sysdig.com/blog/malicious-images-docker-hub/">Sysdig Threat Report</a>).</p>
+      </article>
+      <article>
+        <h3>Socially Engineered Logic Bombs</h3>
+        <p>Is the codebase immune to malicious contributors? A contributor can spend years introducing obfuscated backdoors that static scans miss. <br>
+        <em>Boundary:</em> <strong>Structural Limitation</strong>. Static scans cannot detect intentional logical backdoors. The gate runs kernel-level eBPF tracing during smoke tests to monitor runtime executions, but this covers only active test paths. <br>
+        <em>Incident:</em> The <strong>XZ Utils backdoor (2024)</strong>, where a trusted maintainer spent years planting a sophisticated build-time SSH authentication bypass (<a href="https://nvd.nist.gov/vuln/detail/CVE-2024-3094">CVE-2024-3094</a>).</p>
+      </article>
+      <article>
+        <h3>Pipeline Takeover & Token Theft</h3>
+        <p>Can the container compromise the build pipeline? A malicious dependency can execute install scripts to harvest secrets from ambient environment variables. <br>
+        <em>Boundary:</em> <strong>Partial Prevention</strong>. We run workflows with read-only GitHub OIDC tokens and isolate dependencies, but any build-time execution risks exfiltrating ambient variables if exposed. <br>
+        <em>Incident:</em> The <strong>Codecov Bash Uploader compromise (2021)</strong>, where a compromised script silently exfiltrated CI environment credentials (<a href="https://www.cisa.gov/news-events/alerts/2021/04/27/compromise-codecov-bash-uploader-script">CISA Alert AA21-117A</a>).</p>
+      </article>
+      <article>
+        <h3>Container Escape & Privileges</h3>
+        <p>What is the worst-case blast radius? Running as root or with high capabilities enables container breakouts to the host. <br>
+        <em>Boundary:</em> <strong>Enforced by IaC Policy</strong>. The gate scans deployment manifests for insecure capabilities or root execution and blocks them. <br>
+        <em>Incident:</em> The <strong>runc container escape (2024)</strong>, where a runtime file descriptor leak allowed attackers to break container boundaries and gain host root access (<a href="https://nvd.nist.gov/vuln/detail/CVE-2024-21626">CVE-2024-21626</a>).</p>
+      </article>
+      <article>
+        <h3>Post-Promotion Security Decay</h3>
+        <p>How do we handle new disclosures? An image that was clean at promotion decays as new vulnerabilities are discovered. <br>
+        <em>Boundary:</em> <strong>Partial (Active Detection)</strong>. The gate scans the deployed digest weekly, but cannot prevent zero-days exploited before public disclosure. <br>
+        <em>Incident:</em> The <strong>Cleo File Transfer campaign (December 2024)</strong>, where zero-day vulnerabilities were actively weaponized before patches or CVE records were published (<a href="https://nvd.nist.gov/vuln/detail/CVE-2024-50623">CVE-2024-50623</a>).</p>
+      </article>
+      <article>
+        <h3>Sidecar & Runner Exposure</h3>
+        <p>Are we verifying the entire bundle? Hardening the main application while leaving task runners or sidecars unverified leaves a backdoor. <br>
+        <em>Boundary:</em> <strong>Enforced</strong>. The policy configures that all companion runner images must be resolved to digests and evaluated under the same promotion rules. <br>
+        <em>Incident:</em> Companion containers (such as unpinned local databases or runners) serving as entry points to otherwise secure workloads.</p>
+      </article>
+      <article>
+        <h3>Waiver & Exception Decay</h3>
+        <p>Are exceptions auditable and expiring? Permanent exceptions become permanent backdoors. <br>
+        <em>Boundary:</em> <strong>Enforced</strong>. The workflow requires exceptions to target specific CVEs, document compensating controls, and declare an expiry date. <br>
+        <em>Incident:</em> Stale, unmonitored security exceptions leading to compromise of legacy enterprise services.</p>
+      </article>
     </div>
   </section>
 
@@ -67,7 +108,7 @@
         <tr><th scope="row">Trusted intake</th><td>Only <code>n8nio/n8n</code> and <code>n8nio/runners</code>; strict <code>x.y.z</code> versions. <code>latest</code> must resolve before use.</td><td><a href="https://github.com/llody9977/artifactgate/blob/main/policy/image-ingestion-policy.yml">image-ingestion-policy.yml</a></td></tr>
         <tr><th scope="row">Vendor identity gap</th><td>Upstream signature verification is currently warning-only, with accepted risk and review date recorded in policy.</td><td><a href="https://github.com/llody9977/artifactgate/blob/main/policy/image-ingestion-policy.yml">vendor_signature</a></td></tr>
         <tr><th scope="row">Automatic gate</th><td>Critical/high findings require review for a KEV match, age ≥30 days, EPSS ≥2%, or unknown required evidence.</td><td><a href="https://github.com/llody9977/artifactgate/blob/main/policy/vulnerability-gate-policy.yml">vulnerability-gate-policy.yml</a></td></tr>
-        <tr><th scope="row">Manual exception</th><td>The <code>trusted-promotion</code> environment requires every gated CVE, meaningful justification, compensating controls and a future expiry.</td><td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/workflows/image-promotion.yml">image-promotion.yml</a></td></tr>
+        <tr><th scope="row">Manual exception</th><td>Requires detailed justification and compensating controls, generating cryptographically signed <code>OpenVEX</code> exception files.</td><td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/workflows/image-promotion.yml">image-promotion.yml</a></td></tr>
         <tr><th scope="row">Trusted outputs</th><td>Accepted images go to <code>artifactgate/n8n-trusted</code> and <code>artifactgate/n8n-runners-trusted</code>, with separate attestations.</td><td><a href="https://github.com/llody9977/artifactgate/blob/main/docs/signing-and-attestation.md">signing and attestation</a></td></tr>
         <tr><th scope="row">Deployment admission</th><td>Both attestations must verify against owner <code>llody9977</code>; both images are deployed by digest.</td><td><a href="https://github.com/llody9977/artifactgate/blob/main/iac/n8n/install.sh">install.sh</a></td></tr>
         <tr><th scope="row">Ongoing review</th><td>The latest promoted release is re-scanned weekly; policy regressions open a security issue.</td><td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/workflows/rescan.yml">rescan.yml</a></td></tr>
@@ -108,7 +149,32 @@
     <p>A successful result means the exact pair passed the documented policy or a scoped, justified and expiring exception was approved. It does not mean vulnerability-free, compliant or suitable for every environment. SBOMs and scanner feeds may be incomplete or delayed. Runtime observations cover only exercised smoke-test paths, and “not observed” is not proof that vulnerable code is unreachable.</p>
   </section>
 
-  <footer>© 2026 <a href="https://github.com/llody9977">llody9977</a> · <a href="https://github.com/llody9977/artifactgate/blob/main/LICENSE">Apache-2.0</a> · Personal and experimental · <a href="https://github.com/llody9977/artifactgate#disclaimer">Full disclaimer</a></footer>
+  <section class="boundary">
+    <p class="kicker">OUT OF SCOPE</p>
+    <h2>What ArtifactGate structurally cannot do</h2>
+    <div class="standards">
+      <article>
+        <h3>Detect Obfuscated Backdoors</h3>
+        <p>It cannot find custom, obfuscated logic bombs in source dependencies through static scans. Runtime eBPF monitoring flags anomalous actions, but only on paths exercised by tests.</p>
+      </article>
+      <article>
+        <h3>Verify Vendor Build Integrity</h3>
+        <p>Absent upstream cryptographic provenance, the gate only proves that the image matches a resolved digest. It cannot prove that the vendor's build pipeline was secure or untampered.</p>
+      </article>
+      <article>
+        <h3>Assess Application Logic</h3>
+        <p>The gate runs dynamic smoketests and generic vulnerability scans. It cannot perform custom application-layer penetration testing or verify the logical correctness of n8n workflows.</p>
+      </article>
+      <article>
+        <h3>Guarantee Day-Zero Immunity</h3>
+        <p>A promoted image is only clean against known datasets at the time of scanning. A zero-day exploit or delayed CVE registration will bypass the promotion gate.</p>
+      </article>
+    </div>
+  </section>
+
+  <footer>
+    <p class="disclaimer">Disclaimer: ArtifactGate is a personal, experimental reference project. It is not affiliated with, endorsed by, or certified by n8n, CIS, CISA, NIST, OWASP, Sigstore, Aqua Security, or GitHub. Read the full disclaimer on the repository homepage.</p>
+    <p>© 2026 <a href="https://github.com/llody9977">llody9977</a> · <a href="https://github.com/llody9977/artifactgate/blob/main/LICENSE">Apache-2.0</a> · Personal and experimental · <a href="https://github.com/llody9977/artifactgate#disclaimer">Full disclaimer</a></p></footer>
 </main>
 <script>
 fetch('evidence.json').then(response => {

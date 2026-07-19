@@ -22,9 +22,9 @@ ArtifactGate is designed to answer six questions before deployment:
 | :--- | :--- |
 | **Source** — Did this come from an allowed upstream? | source allowlist and version intake policy |
 | **Identity** — Which exact bytes were assessed? | OCI digest resolution and digest pinning |
-| **Composition** — What is declared to be inside? | SPDX SBOM generation and attestation |
-| **Risk** — What security signals are known now? | vulnerability, malware, secret, licence, KEV, EPSS, age and bounded runtime checks |
-| **Decision** — Why was it promoted? | policy gate or explicit, scoped and expiring waiver |
+| **Composition** — What is declared to be inside? | SPDX SBOM and machine-readable OpenVEX statement generation and attestation |
+| **Risk** — What security signals are known now? | vulnerability, malware, secret, licence, KEV, EPSS, age, OpenVEX and bounded runtime checks |
+| **Decision** — Why was it promoted? | policy gate or explicit, scoped, expiring waiver and cryptographically signed OpenVEX document |
 | **Continuity** — Are we deploying and monitoring the same artifact? | keyless promotion attestation, verification before deployment and scheduled re-scan |
 
 These are complementary controls. Provenance is not an SBOM, an SBOM is not a vulnerability verdict, a scan is not proof of non-exploitability, and a signature does not make unsafe content safe.
@@ -97,6 +97,7 @@ The GitHub OIDC attestation proves that ArtifactGate's promotion workflow handle
 To deploy the latest promoted image to a host:
 
 ```bash
+# Clone the repository (note: formerly checkout folder named secure-ci-deploy)
 git clone https://github.com/llody9977/artifactgate.git
 cd artifactgate/iac/n8n
 chmod +x install.sh
@@ -123,6 +124,7 @@ To run image promotion manually:
 
 - [Architecture and trust model](docs/architecture-and-trust.md)
 - [Approval gate policy](docs/gate-policy.md)
+- [Signing and attestation](docs/signing-and-attestation.md)
 - [Deployment and operations](docs/deployment-and-operations.md)
 
 ## Repository Structure
@@ -169,6 +171,6 @@ n8n and other product names and trademarks belong to their respective owners. Th
 
 ArtifactGate is released under the [Apache License 2.0](LICENSE). Redistributions must retain the applicable notices, including [NOTICE](NOTICE). See [AUTHORS.md](AUTHORS.md) for authorship and AI-assistance disclosure.
 
-Maintainer commits and tags use the same local SSH signing identity configured for VulnSignal. Published container evidence uses GitHub's OIDC-backed, keyless artifact attestations; the personal SSH private key is never copied into GitHub Actions. These identities serve different trust purposes and are verified separately.
+Maintainer commits and tags use a local SSH signing identity. Published container evidence uses GitHub's OIDC-backed, keyless artifact attestations; the personal SSH private key is never copied into GitHub Actions. These identities serve different trust purposes and are verified separately.
 
 I maintain this as a personal project, so there is no fixed support or service timetable. See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md) before reporting or changing security-sensitive behaviour.

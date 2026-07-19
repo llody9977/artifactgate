@@ -53,6 +53,7 @@ dt { color: var(--muted); }
 dd { margin: 0; }
 a { color: var(--accent); text-underline-offset: .18em; }
 pre { padding: 1rem 1.25rem; background: #111827; color: #f4f6f8; border: 1px solid var(--line); overflow: auto; }
+.disclaimer { font-size: .78rem; line-height: 1.55; margin-bottom: 1.25rem; }
 footer { margin-top: 5rem; padding-top: 1.5rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; }
 
 @media (max-width: 720px) {
