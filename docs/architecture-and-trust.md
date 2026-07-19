@@ -35,11 +35,11 @@ path; and runtime hardening limits impact. None is a substitute for the others.
 | :--- | :--- | :--- |
 | Dependency chain abuse | A trusted vendor image can still introduce risky or newly vulnerable components | digest pinning, Trivy scan, KEV/EPSS/age enrichment |
 | Artifact substitution or tag drift | A mutable upstream tag can change without notice | resolve and pin immutable digest before promotion |
-| Prohibitive licenses | Vendor images may introduce strict copyleft licenses | Trivy licence reporting for human review |
+| Prohibitive licences | Vendor images may introduce strict copyleft licences | Trivy licence reporting for human review |
 | Runtime misconfigurations | Static scans miss exposed runtime HTTP flaws | OWASP ZAP baseline DAST during smoke run |
 | IaC and script weaknesses | Deployment files can undermine otherwise good image controls | Checkov and Shellcheck in CI |
 | Insufficient flow control | Higher-risk images should not move through the same path as cleaner ones | manual approval via `trusted-promotion` |
-| Weak artifact integrity evidence | Teams need proof, not only a passing scan | provenance and SBOM attestation |
+| Weak artifact integrity evidence | Teams need proof, not only a passing scan | provenance, SBOM, and machine-readable OpenVEX attestation |
 | Weak pipeline identity model | Long-lived publish credentials expand exposure | ephemeral `GITHUB_TOKEN` and OIDC-backed attestation |
 | Insufficient day-2 monitoring | Risk changes after promotion | scheduled re-scan of the latest promoted release |
 | Runtime over-privilege | A compromised workload can still do damage after deploy | hardened Docker runtime settings |
@@ -54,9 +54,9 @@ flowchart TD
     end
 
     subgraph Analysis["2. Risk Enrichment"]
-        C --> D["Trivy vulnerability, secret, license, and malware scan"]
+        C --> D["Trivy vulnerability, secret, licence, and malware scan"]
         C --> E["Tracee reachability and ZAP smoke run"]
-        D --> F["KEV, EPSS, and age enrichment"]
+        D --> F["KEV, EPSS, OpenVEX, and age enrichment"]
         E --> F
     end
 
@@ -69,7 +69,7 @@ flowchart TD
     subgraph Trust["4. Provenance and Release"]
         H --> J["Push trusted image pair to GHCR"]
         I --> J
-        J --> K["Attest provenance and SBOM"]
+        J --> K["Attest provenance, SBOM, and OpenVEX document"]
         K --> L["Create GitHub release with rollback metadata"]
     end
 
@@ -85,8 +85,8 @@ Current trust model:
 
 - GHCR authentication uses the repository-scoped ephemeral `GITHUB_TOKEN`
 - attestation flows use GitHub Actions OIDC with `id-token: write`
-- build provenance and SBOM attestations are attached independently to both promoted images
-- maintainer commits and tags use the same local SSH signing identity as VulnSignal; this personal key is not stored in Actions
+- build provenance, SBOM, and OpenVEX attestations are attached independently to both promoted images
+- maintainer commits and tags use a local SSH signing identity; this personal key is not stored in Actions
 - workflows are pinned to immutable action SHAs
 
 In practical terms, the promotion path avoids a long-lived registry password or PAT for normal publish operations and treats the GitHub Actions workflow as the controlled promotion environment for this repository.
