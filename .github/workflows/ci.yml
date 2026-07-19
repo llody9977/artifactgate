@@ -168,7 +168,7 @@ jobs:
 
           jq -e '.ReachabilitySummary.matched_event_count > 0' trivy-report.tracee.json > /dev/null
           jq -e '[.Results[]?.Vulnerabilities[]? | has("Reachable")] | all' trivy-report.enriched.json > /dev/null
-          jq -e '[.Results[]?.Vulnerabilities[]? | .Reachability] | any(. == "Observed" or . == "Not observed")' trivy-report.enriched.json > /dev/null
+          jq -e '[.Results[]?.Vulnerabilities[]? | .Reachability] | length > 0 and all(. == "Observed" or . == "Not observed" or . == "Unknown")' trivy-report.enriched.json > /dev/null
           grep -q "Reachability" "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Tracee integration artifacts
