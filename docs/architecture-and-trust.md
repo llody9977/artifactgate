@@ -6,6 +6,29 @@ This repository is designed to reduce the risk of promoting a third-party image 
 
 The example image is `n8nio/n8n`, but the architecture is meant to illustrate a broader vendor-image promotion pattern.
 
+## Trust States
+
+ArtifactGate uses “trusted” as a local policy state, not as a statement that the
+vendor or container is universally secure.
+
+1. **Upstream candidate** — an allowed vendor reference that has not yet earned a
+   deployment decision. A moving label such as `latest` is resolved to a semantic
+   version and then to immutable application and runner digests.
+2. **Assessed pair** — the exact digests have composition, vulnerability, malware,
+   secret, licence and bounded runtime evidence attached. This evidence can still
+   contain unknowns and findings.
+3. **Promoted pair** — policy allowed the assessed pair, or an accountable reviewer
+   accepted every gated finding through a scoped and expiring exception. Both images
+   are copied to the controlled ArtifactGate GHCR namespaces and attested separately.
+4. **Admitted deployment** — the installer verifies both promotion attestations and
+   deploys the same immutable digests. Scheduled re-scanning can later challenge the
+   earlier decision as risk information changes.
+
+This separation matters because controls answer different questions. The upstream
+digest establishes byte identity; the SBOM describes known composition; scanning and
+enrichment support a risk decision; the ArtifactGate attestation records the promotion
+path; and runtime hardening limits impact. None is a substitute for the others.
+
 ## Threat Model Mapping
 
 | Threat pattern | Why it matters here | Primary control in this repo |
@@ -71,6 +94,36 @@ In practical terms, the promotion path avoids a long-lived registry password or 
 ## Framework Alignment
 
 These frameworks are used as design references, not blanket compliance claims.
+
+### NIST SP 800-161 Rev. 1
+
+Useful here for treating acquired third-party software as a continuing cybersecurity
+supply-chain risk rather than a one-time download decision.
+
+Examples in this repo:
+
+- explicit supplier and image intake rules
+- documented risk acceptance and review dates
+- evidence retained with the promotion decision
+- scheduled re-assessment after acquisition
+
+### NIST SP 800-190
+
+Useful here for container-specific image trust, vulnerability management, registry
+control and runtime configuration.
+
+Examples in this repo:
+
+- controlled promotion namespace
+- immutable image references
+- pre-promotion and recurring vulnerability assessment
+- least-privilege Compose configuration
+
+### NIST SP 800-218 (SSDF)
+
+Useful here for third-party component verification and collecting provenance data for
+release components. ArtifactGate is a consumer and promoter of the example vendor image;
+it does not claim to implement the vendor's development lifecycle.
 
 ### OWASP Top 10 CI/CD Security Risks
 

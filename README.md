@@ -1,24 +1,73 @@
-# ArtifactGate: Trusted Vendor Image Promotion for n8n
+# ArtifactGate: Evidence-Based Admission Control for Third-Party Containers
 
 [![CI](https://github.com/llody9977/artifactgate/actions/workflows/ci.yml/badge.svg)](https://github.com/llody9977/artifactgate/actions/workflows/ci.yml)
 [![Image Promotion](https://github.com/llody9977/artifactgate/actions/workflows/image-promotion.yml/badge.svg)](https://github.com/llody9977/artifactgate/actions/workflows/image-promotion.yml)
 [![Re-Scan](https://github.com/llody9977/artifactgate/actions/workflows/rescan.yml/badge.svg)](https://github.com/llody9977/artifactgate/actions/workflows/rescan.yml)
 
-I built ArtifactGate as a personal reference project to work through a practical question: if I need to run a third-party container image, what evidence should I collect before treating it as deployable?
+I built ArtifactGate around a practical problem: pulling a third-party container is easy, but accepting the supplier's risk along with it is also easy.
 
-The example uses n8n. The pipeline resolves the application and external runner to immutable digests, scans and enriches the findings, records the promotion decision, publishes the accepted pair to GHCR, and provides a hardened deployment example.
+A familiar image name or a green vulnerability scan is useful, but neither is proof that the image came through the expected path, contains only acceptable components, or is the same set of bytes later deployed. Tags can move. SBOMs can be incomplete. New CVEs appear after release. A sidecar can also carry a separate supply-chain risk from the main application.
 
-The example workload is `n8nio/n8n`. The same pattern is meant to demonstrate how a vendor image can be evaluated as a trust and decision problem, not only as a raw CVE count.
+ArtifactGate is a personal reference implementation of an **evidence-based admission and promotion gate**. It treats a vendor image as untrusted input, resolves the exact application and runner digests, gathers security evidence, applies a documented decision policy, and promotes only the accepted pair to a controlled registry namespace. Deployment then verifies the promotion attestations and uses those same immutable digests.
 
-## What This Repo Does
+The example workload is `n8nio/n8n`, but the pattern is broader: do not turn third-party software into an internally trusted artifact until you can explain what was assessed, what was accepted, and what will actually run.
+
+> **Core idea:** trust is not inherited from a tag or created by a scanner. It is a recorded decision about an exact artifact, supported by evidence and bounded by what that evidence can prove.
+
+## The Decision ArtifactGate Produces
+
+ArtifactGate is designed to answer six questions before deployment:
+
+| Question | Evidence or control |
+| :--- | :--- |
+| **Source** — Did this come from an allowed upstream? | source allowlist and version intake policy |
+| **Identity** — Which exact bytes were assessed? | OCI digest resolution and digest pinning |
+| **Composition** — What is declared to be inside? | SPDX SBOM generation and attestation |
+| **Risk** — What security signals are known now? | vulnerability, malware, secret, licence, KEV, EPSS, age and bounded runtime checks |
+| **Decision** — Why was it promoted? | policy gate or explicit, scoped and expiring waiver |
+| **Continuity** — Are we deploying and monitoring the same artifact? | keyless promotion attestation, verification before deployment and scheduled re-scan |
+
+These are complementary controls. Provenance is not an SBOM, an SBOM is not a vulnerability verdict, a scan is not proof of non-exploitability, and a signature does not make unsafe content safe.
+
+## What This Repository Does
 
 - allowlists the upstream source image and enforces semver-style version intake
-- resolves and scans an immutable upstream digest
+- resolves and scans immutable application and runner digests
 - enriches findings with `KEV`, `EPSS`, CVE age, and runtime reachability context
 - promotes an approved application and runner pair to GHCR
 - attests provenance and SBOM data for the promoted artifact
 - re-scans the latest promoted release on a schedule
 - provides a hardened Docker Compose deployment for n8n
+
+## Standards-Informed Framing
+
+ArtifactGate uses the following publications as design references. This is an engineering mapping, not a certification or claim of NIST or SLSA conformance.
+
+| Reference | How it informs ArtifactGate |
+| :--- | :--- |
+| [NIST SP 800-161 Rev. 1](https://csrc.nist.gov/pubs/sp/800/161/r1/upd1/final) | Frames third-party software as a cybersecurity supply-chain risk that needs due diligence, assessment, mitigation and continuing oversight. |
+| [NIST SP 800-190](https://csrc.nist.gov/pubs/sp/800/190/final) | Informs trusted-image handling, vulnerability management, registry controls and hardened container runtime configuration. |
+| [NIST SP 800-218 (SSDF)](https://csrc.nist.gov/pubs/sp/800/218/final) | Informs verification of third-party components and the collection and protection of release provenance and integrity evidence. |
+| [NIST SP 800-204D](https://csrc.nist.gov/pubs/sp/800/204/d/final) | Provides the closest architectural framing for integrating provenance, attestations, SBOMs and supply-chain controls into CI/CD. |
+| [SLSA v1.2](https://slsa.dev/spec/v1.2/) | Supplies a useful model for provenance and verification expectations. ArtifactGate does not claim a SLSA level for an upstream image it did not build. |
+
+NIST describes SBOMs as a way to improve transparency, provenance and the speed of vulnerability identification. ArtifactGate therefore keeps the SBOM tied to the promoted digest and feeds the inventory into ongoing risk review. It does not treat the presence of an SBOM as proof that the inventory is complete or that the artifact is secure.
+
+## Where Trust and Rules Are Set
+
+The rules are kept in the repository so a change is reviewable and leaves source history. The policy files state the intent; the workflow and enrichment script enforce the decision.
+
+| Control point | Current rule | Source of truth |
+| :--- | :--- | :--- |
+| Trusted upstream intake | only `n8nio/n8n` and `n8nio/runners`; strict `x.y.z` versions, with `latest` resolved before use | [`policy/image-ingestion-policy.yml`](policy/image-ingestion-policy.yml) |
+| Upstream signature handling | warning-only because the vendor signature is not currently available; the accepted gap and review date are recorded | [`policy/image-ingestion-policy.yml`](policy/image-ingestion-policy.yml) |
+| Vulnerability gate | critical/high findings require review for KEV, age ≥30 days, EPSS ≥2%, or unknown required evidence | [`policy/vulnerability-gate-policy.yml`](policy/vulnerability-gate-policy.yml) and [`enrich_findings.py`](.github/scripts/enrich_findings.py) |
+| Manual exception | `trusted-promotion` environment approval plus every gated CVE, meaningful justification, compensating controls and future expiry | [`image-promotion.yml`](.github/workflows/image-promotion.yml) |
+| Trusted outputs | separate ArtifactGate GHCR repositories and attestations for the application and runner | [`signing-and-attestation.md`](docs/signing-and-attestation.md) |
+| Deployment admission | verify both subjects against owner `llody9977`, then deploy both by immutable digest | [`install.sh`](iac/n8n/install.sh) |
+| Continuing review | weekly re-scan of the latest promoted release, with a security issue when risk crosses the current gate | [`rescan.yml`](.github/workflows/rescan.yml) |
+
+When adapting the pattern to another vendor, start by changing the intake allowlist through a pull request, confirming the vendor's own signature or provenance mechanism, defining risk thresholds suitable for the environment, and configuring independent reviewers for the protected promotion environment.
 
 ## Pipeline Flow
 
@@ -31,15 +80,17 @@ flowchart TD
     E --> F{"Approval gate"}
     F -->|Lower-risk| G["Auto-promote to GHCR"]
     F -->|Higher-risk| H["Manual approval"]
-    G --> I["Attest provenance and SBOM"]
+    G --> I["Attest promotion provenance and SBOM"]
     H --> I
     I --> J["Create trusted release"]
     J --> K["Scheduled re-scan of latest promoted release"]
 ```
 
-## Assurance boundary
+## Assurance Boundary
 
-A successful promotion does not mean that an image is vulnerability-free. It means only that the image pair passed the project's documented checks, or that identified exceptions were explicitly reviewed with an expiry date. Tracee observations cover the exercised smoke-test paths; a file that was not observed is not proven unreachable.
+A successful promotion does not mean that an image is vulnerability-free, compliant, or safe for every environment. It means only that the exact image pair passed this project's documented checks, or that identified exceptions were explicitly accepted with scope, justification and an expiry date.
+
+The GitHub OIDC attestation proves that ArtifactGate's promotion workflow handled a particular digest. It does **not** prove how the upstream vendor originally built that digest unless separately verified upstream provenance exists. Likewise, Tracee observations cover only the exercised smoke-test paths; a file that was not observed is not proven unreachable.
 
 ## Quick Start
 
@@ -96,9 +147,12 @@ To run image promotion manually:
 ## References
 
 - [OWASP Top 10 CI/CD Security Risks](https://owasp.org/www-project-top-10-ci-cd-security-risks/)
-- [NIST SP 800-53 Rev. 5](https://csrc.nist.gov/pubs/sp/800/53/r5/upd1/final)
+- [NIST SP 800-161 Rev. 1](https://csrc.nist.gov/pubs/sp/800/161/r1/upd1/final)
+- [NIST SP 800-190](https://csrc.nist.gov/pubs/sp/800/190/final)
+- [NIST SP 800-218](https://csrc.nist.gov/pubs/sp/800/218/final)
 - [NIST SP 800-204D](https://csrc.nist.gov/pubs/sp/800/204/d/final)
-- [SLSA v1.0 specification](https://slsa.dev/spec/v1.0/)
+- [NIST software supply-chain SBOM guidance](https://www.nist.gov/itl/executive-order-14028-improving-nations-cybersecurity/software-supply-chain-security-guidance-20)
+- [SLSA v1.2 specification](https://slsa.dev/spec/v1.2/)
 - [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog)
 - [FIRST EPSS](https://www.first.org/epss/)
 - [CIS Docker Benchmark](https://www.cisecurity.org/benchmark/docker)
