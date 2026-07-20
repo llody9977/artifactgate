@@ -164,8 +164,8 @@ ArtifactGate's promotion provenance exhibits **SLSA Build L2/L3 properties** for
 ### EU Cyber Resilience Act (CRA) & NTIA Minimum Elements
 
 Useful here for ensuring compliance with emerging digital supply chain regulations:
-- **NTIA Minimum Elements for an SBOM**: Enforced via Trivy-generated SPDX SBOMs containing component details, dependencies, and relationship links.
-- **EU CRA (Vulnerability Disclosure and VEX)**: ArtifactGate generates machine-readable **OpenVEX** documents mapping to vulnerability scanning data, establishing an automated mechanism to declare product vulnerability status.
+- **[NTIA Minimum Elements for an SBOM](https://www.ntia.doc.gov/files/ntia/publications/sbom_minimum_elements_report.pdf)**: Enforced via Trivy-generated SPDX SBOMs containing component details, dependencies, and relationship links.
+- **[EU Cyber Resilience Act (CRA)](https://digital-strategy.ec.europa.eu/en/policies/cyber-resilience-act) / Vulnerability Disclosure and VEX**: ArtifactGate generates machine-readable **[OpenVEX](https://openvex.dev/)** documents mapping to vulnerability scanning data, establishing an automated mechanism to declare product vulnerability status.
 
 ## Docker Hardening
 
