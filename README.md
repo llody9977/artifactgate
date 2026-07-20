@@ -50,6 +50,8 @@ ArtifactGate uses the following publications as design references. This is an en
 | [NIST SP 800-218 (SSDF)](https://csrc.nist.gov/pubs/sp/800/218/final) | Informs verification of third-party components and the collection and protection of release provenance and integrity evidence. |
 | [NIST SP 800-204D](https://csrc.nist.gov/pubs/sp/800/204/d/final) | Provides the closest architectural framing for integrating provenance, attestations, SBOMs and supply-chain controls into CI/CD. |
 | [SLSA v1.2](https://slsa.dev/spec/v1.2/) | Supplies a useful model for provenance and verification expectations. ArtifactGate does not claim a SLSA level for an upstream image it did not build. |
+| [EU CRA](https://digital-strategy.ec.europa.eu/en/policies/cyber-resilience-act) | Establishes regulatory vulnerability disclosure and machine-readable VEX requirements. |
+| [NTIA SBOM Elements](https://www.ntia.doc.gov/files/ntia/publications/sbom_minimum_elements_report.pdf) | Defines minimum required transparency elements for SPDX SBOM reporting. |
 
 NIST describes SBOMs as a way to improve transparency, provenance and the speed of vulnerability identification. ArtifactGate therefore keeps the SBOM tied to the promoted digest and feeds the inventory into ongoing risk review. It does not treat the presence of an SBOM as proof that the inventory is complete or that the artifact is secure.
 

@@ -26,25 +26,6 @@
   </section>
 
   <section>
-    <p class="kicker">THE DECISION MODEL</p>
-    <h2>Six questions, one exact artifact pair</h2>
-    <div class="grid">
-      <article><span>01</span><h3>Source</h3><p>Did it come from an allowed upstream and an accepted version?</p></article>
-      <article><span>02</span><h3>Identity</h3><p>Which immutable OCI digests were actually assessed?</p></article>
-      <article><span>03</span><h3>Composition</h3><p>What does the digest-bound SPDX SBOM declare is inside?</p></article>
-      <article><span>04</span><h3>Risk</h3><p>What do CVE, KEV, EPSS, age, malware, secret, OpenVEX and bounded runtime signals show?</p></article>
-      <article><span>05</span><h3>Decision</h3><p>Did policy allow promotion, or did we sign expiring OpenVEX exception statements?</p></article>
-      <article><span>06</span><h3>Continuity</h3><p>Can deployment verify and monitor the same application and runner bytes?</p></article>
-    </div>
-  </section>
-
-  <section class="flow">
-    <p class="kicker">CONTROLLED PROMOTION</p>
-    <h2>Quarantine → assess → decide → attest → deploy → re-check</h2>
-    <p>The upstream image is never treated as internally trusted merely because it can be pulled. ArtifactGate resolves the digest first, evaluates the application and runner together, fails closed when required evidence is unknown, and promotes the accepted pair into a controlled namespace. Deployment verifies GitHub OIDC-backed attestations and pins both digests.</p>
-  </section>
-
-  <section>
     <p class="kicker">WHAT TO LOOK OUT FOR</p>
     <h2>Questions to ask before trusting any third-party image</h2>
     <div class="checklist">
@@ -94,7 +75,7 @@
         <h3>Waiver & Exception Decay</h3>
         <p>Are exceptions auditable and expiring? Permanent exceptions become permanent backdoors. <br>
         <em>Boundary:</em> <strong>Enforced</strong>. The workflow requires exceptions to target specific CVEs, document compensating controls, and declare an expiry date. <br>
-        <em>Incident:</em> The <strong>Equifax breach (2017)</strong>, where CVE-2017-5638 in Apache Struts was known and patched upstream, but exposure persisted for months due to failed remediation and exception tracking (147 million records compromised).</p>
+        <em>Incident:</em> The <strong>Equifax breach (2017)</strong>, where <a href="https://nvd.nist.gov/vuln/detail/CVE-2017-5638">CVE-2017-5638</a> in Apache Struts was known and patched upstream, but exposure persisted for months due to failed remediation and exception tracking (147 million records compromised).</p>
       </article>
       <article>
         <h3>Compromised Registry Namespace</h3>
@@ -106,7 +87,7 @@
         <h3>Third-Party Action Compromise</h3>
         <p>Can third-party actions in GitHub workflows be updated or retagged to exfiltrate secrets or inject backdoors? <br>
         <em>Boundary:</em> <strong>Enforced Prevention</strong>. All actions used in our promotion and CI workflows are pinned to immutable commit SHAs rather than mutable version tags. <br>
-        <em>Incident:</em> The <strong>tj-actions/changed-files compromise (March 2025)</strong>, where a compromised, retagged action leaked CI secrets across thousands of downstream repositories.</p>
+        <em>Incident:</em> The <strong>tj-actions/changed-files compromise (March 2025)</strong>, where a compromised, retagged action (<a href="https://nvd.nist.gov/vuln/detail/CVE-2025-30066">CVE-2025-30066</a>) leaked CI secrets across thousands of downstream repositories.</p>
       </article>
       <article>
         <h3>Poisoned Pipeline Execution (PPE)</h3>
@@ -127,6 +108,27 @@
         <em>Rationale:</em> Blocking hardcoded secrets at the gate prevents leaked vendor credentials from being deployed to production environments.</p>
       </article>
     </div>
+  </section>
+
+  <section>
+    <p class="kicker">THE DECISION MODEL</p>
+    <h2>Six questions, one exact artifact pair</h2>
+    <div class="grid">
+      <article><span>01</span><h3>Source</h3><p>Did it come from an allowed upstream and an accepted version?</p></article>
+      <article><span>02</span><h3>Identity</h3><p>Which immutable OCI digests were actually assessed?</p></article>
+      <article><span>03</span><h3>Composition</h3><p>What does the digest-bound SPDX SBOM declare is inside?</p></article>
+      <article><span>04</span><h3>Risk</h3><p>What do CVE, KEV, EPSS, age, malware, secret, OpenVEX and bounded runtime signals show?</p></article>
+      <article><span>05</span><h3>Decision</h3><p>Did policy allow promotion, or did we sign expiring OpenVEX exception statements?</p></article>
+      <article><span>06</span><h3>Continuity</h3><p>Can deployment verify and monitor the same application and runner bytes?</p></article>
+    </div>
+  </section>
+
+  <section class="flow">
+    <p class="kicker">CONTROLLED PROMOTION</p>
+    <h2>Quarantine → assess → decide → attest → deploy → re-check</h2>
+    <p>The upstream image is never treated as internally trusted merely because it can be pulled. ArtifactGate resolves the digest first, evaluates the application and runner together, fails closed when required evidence is unknown, and promotes the accepted pair into a controlled namespace. Deployment verifies GitHub OIDC-backed attestations and pins both digests.</p>
+  </section>
+
   <section>
     <p class="kicker">CONTROL INVENTORY</p>
     <h2>Active Pipeline Control Mapping</h2>
@@ -159,7 +161,7 @@
           <td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/workflows/image-promotion.yml">image-promotion.yml</a></td>
         </tr>
         <tr>
-          <th scope="row">Trivy Malware & Secret Scan</th>
+          <th scope="row"><a href="https://aquasecurity.github.io/trivy/">Trivy</a> Malware & Secret Scan</th>
           <td>Embedded secrets, keys, and malware</td>
           <td>Preventive</td>
           <td>Promotion Gate</td>
@@ -167,7 +169,7 @@
           <td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/workflows/image-promotion.yml">image-promotion.yml</a></td>
         </tr>
         <tr>
-          <th scope="row">OWASP ZAP DAST Scan</th>
+          <th scope="row"><a href="https://www.zaproxy.org/">OWASP ZAP</a> DAST Scan</th>
           <td>Runtime network / HTTP vulnerabilities</td>
           <td>Preventive</td>
           <td>Promotion Gate</td>
@@ -175,7 +177,7 @@
           <td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/scripts/run_tracee_reachability.sh">run_tracee_reachability.sh</a></td>
         </tr>
         <tr>
-          <th scope="row">Trivy Licence Scan</th>
+          <th scope="row"><a href="https://aquasecurity.github.io/trivy/">Trivy</a> Licence Scan</th>
           <td>Copyleft licence liabilities</td>
           <td>Detective</td>
           <td>Promotion Gate</td>
@@ -183,7 +185,7 @@
           <td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/workflows/image-promotion.yml">image-promotion.yml</a></td>
         </tr>
         <tr>
-          <th scope="row">Runtime eBPF Observation</th>
+          <th scope="row">Runtime eBPF (<a href="https://aquasecurity.github.io/tracee/">Tracee</a>) Observation</th>
           <td>Logic bombs & active execution paths</td>
           <td>Detective</td>
           <td>Promotion Gate</td>
@@ -192,7 +194,7 @@
         </tr>
         <tr>
           <th scope="row">Vulnerability Risk Enrichment</th>
-          <td>Vulnerability exploitation (KEV/EPSS/Age)</td>
+          <td>Vulnerability exploitation (<a href="https://www.cisa.gov/known-exploited-vulnerabilities-catalog">KEV</a>/<a href="https://www.first.org/epss/">EPSS</a>/Age)</td>
           <td>Preventive</td>
           <td>Promotion Gate</td>
           <td><strong>Blocking</strong></td>
@@ -207,7 +209,7 @@
           <td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/workflows/ci.yml">Workflow Configurations</a></td>
         </tr>
         <tr>
-          <th scope="row">OIDC Provenance & SBOM</th>
+          <th scope="row">OIDC Provenance & SBOM (<a href="https://openvex.dev/">OpenVEX</a>)</th>
           <td>Registry bypass & image swapping</td>
           <td>Preventive</td>
           <td>Attestation / Deploy</td>
