@@ -39,6 +39,36 @@ These are complementary controls. Provenance is not an SBOM, an SBOM is not a vu
 - re-scans the latest promoted release on a schedule
 - provides a hardened Docker Compose deployment for n8n
 
+## End-to-End Promotion Workflow
+
+The promotion pipeline handles images in a strict, zero-trust workflow:
+
+```text
+[ Upstream Registry ]  --> ( Intake Gate )  --> [ Quarantine Environment ]
+  n8nio/n8n:latest            |                    - Trivy Vulnerability Scan
+ (Mutable Reference)          v                    - Trivy Secret & Licence Scan
+                       [ Resolve Digest ]          - OWASP ZAP DAST Network Scan
+                              |                    - Tracee eBPF Syscall Monitor
+                              v                    
+                      ( Policy Engine )  --> [ Cosign Signing & Attestations ]
+                       KEV / EPSS Check          - Signed Build Provenance
+                       Fail-Closed Rules         - Signed SPDX SBOM Metadata
+                              |                  - Signed OpenVEX Exception Docs
+                              v
+                      [ GHCR Namespace ] --> ( Kubernetes Admission Controller )
+                       n8n-trusted@sha           - Verify OIDC workflow identity
+                      (Immutable Digest)         - Weekly continuous re-scans
+```
+
+### Detailed Workflow Steps:
+
+1. **Intake & Digest Pinning**: Downstream references are resolved to immutable OCI SHA256 digests at intake. This guarantees that the exact code evaluated during building matches the code running in production.
+2. **Static Vulnerability & Threat Scan**: Trivy extracts a complete SPDX SBOM and scans container layers for secrets, licensing liabilities, and vulnerability CVE records.
+3. **Dynamic Observation**: The container is executed in a quarantine test harness. **Tracee** uses kernel-level eBPF tracing to audit loaded shared libraries and system calls. **OWASP ZAP** performs a DAST baseline scan to identify web interface exposures.
+4. **Policy Decision Engine**: Scans are enriched with real-time risk metrics (CISA KEV catalog active exploitation status and FIRST EPSS exploit probability). If the image violates rules in `vulnerability-gate-policy.yml` (e.g. active KEV exploits or high-risk unknown items), it fails closed. High-risk items require documented, expiring OpenVEX waivers approved in the GitHub Actions environment.
+5. **OIDC Promotion & Attestation**: Approved image pairs are copied to the protected `secure-ci-deploy/n8n-trusted` registry path. The promotion workflow generates and signs build provenance, SBOM declarations, and OpenVEX files using Cosign and OIDC-backed runner keys.
+6. **Admission Verification & Re-scanning**: Workloads are deployed using their exact SHA256 digests. Production admission checkers verify OIDC-backed signatures before initialization. Deployed builds are re-scanned weekly on a cron schedule to check for post-release security decay.
+
 ## Standards-Informed Framing
 
 ArtifactGate uses the following publications as design references. This is an engineering mapping, not a certification or claim of NIST or SLSA conformance.

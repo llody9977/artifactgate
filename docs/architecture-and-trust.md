@@ -62,7 +62,7 @@ flowchart TD
 
     subgraph Analysis["2. Risk Enrichment"]
         C --> D["Trivy vulnerability, secret, licence, and malware scan"]
-        C --> E["Tracee reachability and ZAP smoke run"]
+        C --> E["Tracee runtime observation and ZAP DAST scan"]
         D --> F["KEV, EPSS, OpenVEX, and age enrichment"]
         E --> F
     end
