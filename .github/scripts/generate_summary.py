@@ -102,6 +102,13 @@ def main():
             f"| {version} | {crit_count} | {high_count} | {med_count} | {low_count} | {kev_emoji} | {manual_review_count} | {auto_eligible_count} | {status} |"
         )
         lines.append("")
+        # Check for ZAP reasons
+        zap_reasons = summary.get("zap_reasons", [])
+        if zap_reasons:
+            lines.append("### 🕸️ OWASP ZAP DAST Alert(s)")
+            for reason in zap_reasons:
+                lines.append(f"- ❌ **Policy Violation**: {reason}")
+            lines.append("")
         lines.append("---")
         lines.append("")
 

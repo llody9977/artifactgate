@@ -230,30 +230,61 @@ echo "---------------------------------------------"
 
 if [ "$INSECURE_LAB_MODE" = true ]; then
     echo "   ⚠️  INSECURE LAB MODE: provenance verification is disabled."
-elif ! command -v gh &> /dev/null || ! gh auth status &> /dev/null 2>&1; then
-    echo ""
-    echo "⚠️  Provenance verification requires the GitHub CLI (gh) and authentication."
-    echo "   Install: https://github.com/cli/cli#installation"
-    echo "❌ Deployment aborted. Install and authenticate GitHub CLI, or use --insecure-lab-mode for an isolated lab only."
-    exit 1
 else
-    if [ -n "$GHCR_DIGEST" ]; then
-        VERIFY_SUBJECT="oci://${GHCR_IMAGE}@${GHCR_DIGEST}"
-        echo "Verifying: $VERIFY_SUBJECT"
-    else
-        VERIFY_SUBJECT="oci://${GHCR_IMAGE}:${N8N_VERSION}"
-        echo "⚠️  No digest available — verifying by tag (weaker guarantee)"
+    HAS_VERIFIED=false
+    VERIFICATION_FAILED=false
+    
+    # 1. Attempt verification with Cosign (Keyless verify)
+    if command -v cosign &> /dev/null; then
+        echo "   🔍 Running Cosign verification..."
+        COSIGN_IDENTITY="https://github.com/${REPO_SLUG}/.github/workflows/image-promotion.yml@refs/heads/main"
+        COSIGN_ISSUER="https://token.actions.githubusercontent.com"
+        
+        if cosign verify --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_IMAGE}@${GHCR_DIGEST}" >/dev/null 2>&1 && \
+           cosign verify --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" >/dev/null 2>&1; then
+            echo "   ✅ Cosign signatures verified."
+            if cosign verify-attestation --type openvex --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_IMAGE}@${GHCR_DIGEST}" >/dev/null 2>&1; then
+                echo "   ✅ Cosign OpenVEX attestation verified."
+                HAS_VERIFIED=true
+            else
+                echo "   ❌ Cosign OpenVEX attestation missing or invalid."
+                VERIFICATION_FAILED=true
+            fi
+        else
+            echo "   ❌ Cosign signature verification failed."
+            VERIFICATION_FAILED=true
+        fi
     fi
-
-    if gh attestation verify "$VERIFY_SUBJECT" -o "$REPO_OWNER" && \
-       gh attestation verify "oci://${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" -o "$REPO_OWNER"; then
-        echo "✅ Provenance verified — image cryptographically bound to this pipeline."
-    else
+    
+    # 2. Attempt verification with GitHub CLI
+    if [ "$VERIFICATION_FAILED" = false ] && command -v gh &> /dev/null && gh auth status &> /dev/null 2>&1; then
+        echo "   🔍 Running GitHub CLI attestation verification..."
+        if gh attestation verify "oci://${GHCR_IMAGE}@${GHCR_DIGEST}" -o "$REPO_OWNER" >/dev/null 2>&1 && \
+           gh attestation verify "oci://${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" -o "$REPO_OWNER" >/dev/null 2>&1; then
+            echo "   ✅ GitHub OIDC build attestations verified."
+            HAS_VERIFIED=true
+        else
+            echo "   ❌ GitHub OIDC build attestation verification failed."
+            VERIFICATION_FAILED=true
+        fi
+    fi
+    
+    # 3. Decision
+    if [ "$VERIFICATION_FAILED" = true ]; then
         echo ""
         echo "❌ SECURITY ALERT: Provenance verification FAILED."
         echo "   The image may have been tampered with or did not originate from the trusted pipeline."
         echo "   Deployment aborted."
         exit 1
+    elif [ "$HAS_VERIFIED" = false ]; then
+        echo ""
+        echo "⚠️  Provenance verification requires either Cosign or the GitHub CLI (gh) to be authenticated."
+        echo "   Please install Cosign (https://sigstore.dev) or authenticate the GitHub CLI (gh auth login)."
+        echo "   Alternatively, use --insecure-lab-mode for a local-only verification bypass."
+        echo "❌ Deployment aborted."
+        exit 1
+    else
+        echo "✅ Cryptographic trust verification passed."
     fi
 fi
 

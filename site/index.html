@@ -26,91 +26,6 @@
   </section>
 
   <section>
-    <p class="kicker">WHAT TO LOOK OUT FOR</p>
-    <h2>Questions to ask before trusting any third-party image</h2>
-    <div class="checklist">
-      <article>
-        <h3>Registry Takeover Risk</h3>
-        <p>Is the upstream registry account secure? Threat actors compromise maintainer accounts to distribute malicious updates. <br>
-        <em>Boundary:</em> <strong>Warning-Only</strong>. The gate warns on missing signatures, but cannot verify the original publisher account's security. <br>
-        <em>Incident:</em> The <strong>ua-parser-js library hijack (2021)</strong>, where compromised developer credentials were used to publish packages containing cryptomining malware (<a href="https://nvd.nist.gov/vuln/detail/CVE-2021-4229">CVE-2021-4229</a>).</p>
-      </article>
-      <article>
-        <h3>Silent Tag Drift Risk</h3>
-        <p>Are we pulling mutable references? Relying on tags like <code>latest</code> allows upstream code to change without your knowledge. <br>
-        <em>Boundary:</em> <strong>Enforced Prevention</strong>. The ingestion gate requires resolving version tags to immutable digests first. Pinned digests cannot drift. <br>
-        <em>Incident:</em> The <strong>JFrog Docker Hub poisoning campaign (2024)</strong>, where threat actors uploaded over 4 million malicious, spoofed/drifted repositories to Docker Hub to distribute phishing scams and malware (<a href="https://jfrog.com/blog/malicious-images-docker-hub/">JFrog Research</a>).</p>
-      </article>
-      <article>
-        <h3>Socially Engineered Logic Bombs</h3>
-        <p>Is the codebase immune to malicious contributors? A contributor can spend years introducing obfuscated backdoors that static scans miss. <br>
-        <em>Boundary:</em> <strong>Structural Limitation</strong>. Static scans cannot detect intentional logical backdoors. The gate runs kernel-level eBPF tracing during smoke tests to monitor runtime executions, but this covers only active test paths. <br>
-        <em>Incident:</em> The <strong>XZ Utils backdoor (2024)</strong>, where a trusted maintainer spent years planting a sophisticated build-time SSH authentication bypass (<a href="https://nvd.nist.gov/vuln/detail/CVE-2024-3094">CVE-2024-3094</a>).</p>
-      </article>
-      <article>
-        <h3>Pipeline Takeover & Token Theft</h3>
-        <p>Can the container compromise the build pipeline? A malicious dependency can execute install scripts to harvest secrets from ambient environment variables. <br>
-        <em>Boundary:</em> <strong>Partial Prevention</strong>. We use least-privilege, job-scoped tokens — the scanning job is read-only, and write scopes are confined to the promotion jobs. <br>
-        <em>Incident:</em> The <strong>Codecov Bash Uploader compromise (2021)</strong>, where a compromised script silently exfiltrated CI environment credentials (<a href="https://www.cisa.gov/news-events/alerts/2021/04/27/compromise-codecov-bash-uploader-script">CISA Alert AA21-117A</a>).</p>
-      </article>
-      <article>
-        <h3>Container Escape & Privileges</h3>
-        <p>What is the worst-case blast radius? Running as root or with high capabilities enables container breakouts to the host. <br>
-        <em>Boundary:</em> <strong>Enforced at Merge</strong>. The gate scans deployment manifests for insecure configurations during repository merge checks, blocking insecure configurations from entering main (not at promotion). <br>
-        <em>Incident:</em> The <strong>runc container escape (2024)</strong>, where a runtime file descriptor leak allowed attackers to break container boundaries and gain host root access (<a href="https://nvd.nist.gov/vuln/detail/CVE-2024-21626">CVE-2024-21626</a>).</p>
-      </article>
-      <article>
-        <h3>Post-Promotion Security Decay</h3>
-        <p>How do we handle new disclosures? An image that was clean at promotion decays as new vulnerabilities are discovered. <br>
-        <em>Boundary:</em> <strong>Partial (Active Detection)</strong>. The gate scans the deployed digest weekly, but cannot prevent zero-days exploited before public disclosure. <br>
-        <em>Incident:</em> The <strong>Cleo File Transfer campaign (December 2024)</strong>, where zero-day vulnerabilities were actively weaponized before patches or CVE records were published (<a href="https://nvd.nist.gov/vuln/detail/CVE-2024-50623">CVE-2024-50623</a>).</p>
-      </article>
-      <article>
-        <h3>Sidecar & Runner Exposure</h3>
-        <p>Are we verifying the entire bundle? Hardening the main application while leaving task runners or sidecars unverified leaves a backdoor. <br>
-        <em>Boundary:</em> <strong>Enforced</strong>. The policy configures that all companion runner images must be resolved to digests and evaluated under the same promotion rules. <br>
-        <em>Rationale:</em> Companion containers (such as unpinned local databases or runners) share the host's execution environment and can serve as entry points to otherwise secure workloads.</p>
-      </article>
-      <article>
-        <h3>Waiver & Exception Decay</h3>
-        <p>Are exceptions auditable and expiring? Permanent exceptions become permanent backdoors. <br>
-        <em>Boundary:</em> <strong>Enforced</strong>. The workflow requires exceptions to target specific CVEs, document compensating controls, and declare an expiry date. <br>
-        <em>Incident:</em> The <strong>Equifax breach (2017)</strong>, where <a href="https://nvd.nist.gov/vuln/detail/CVE-2017-5638">CVE-2017-5638</a> in Apache Struts was known and patched upstream, but exposure persisted for months due to failed remediation and exception tracking (147 million records compromised).</p>
-      </article>
-      <article>
-        <h3>Compromised Registry Namespace</h3>
-        <p>If an attacker gains write access to our GHCR namespace, can they swap the trusted image? <br>
-        <em>Boundary:</em> <strong>Enforced by Attestation</strong>. The deployment installer does not trust registry name presence; it cryptographically verifies build attestations generated by our OIDC-backed workflow and pins the exact digests. <br>
-        <em>Rationale:</em> Attackers who compromise repository registry accounts cannot bypass admission control without also stealing the OIDC-backed signing credentials of the GitHub Actions runner.</p>
-      </article>
-      <article>
-        <h3>Third-Party Action Compromise</h3>
-        <p>Can third-party actions in GitHub workflows be updated or retagged to exfiltrate secrets or inject backdoors? <br>
-        <em>Boundary:</em> <strong>Enforced Prevention</strong>. All actions used in our promotion and CI workflows are pinned to immutable commit SHAs rather than mutable version tags. <br>
-        <em>Incident:</em> The <strong>tj-actions/changed-files compromise (March 2025)</strong>, where a compromised, retagged action (<a href="https://nvd.nist.gov/vuln/detail/CVE-2025-30066">CVE-2025-30066</a>) leaked CI secrets across thousands of downstream repositories.</p>
-      </article>
-      <article>
-        <h3>Poisoned Pipeline Execution (PPE)</h3>
-        <p>Can a malicious pull request edit the gate's policy files (like <code>vulnerability-gate-policy.yml</code>) to weaken promotion thresholds? <br>
-        <em>Boundary:</em> <strong>Enforced by Branch Protection</strong>. Branch protection rules, required review approvals, and strict CODEOWNERS constraints prevent modifications to the <code>.github/</code> and <code>policy/</code> folders from being merged without administrator review. <br>
-        <em>Rationale:</em> Enforces segregation of duties by blocking pull requests from auto-merging policy modifications.</p>
-      </article>
-      <article>
-        <h3>Verification Bypass at Deploy</h3>
-        <p>Can developers deploy promoted images in `--insecure-lab-mode`, bypassing attestation checks entirely? <br>
-        <em>Boundary:</em> <strong>Structural Limitation</strong>. The installer allows disabling checks for local development. In production, this escape hatch must be blocked by container admission controllers (like Kyverno or Gatekeeper). <br>
-        <em>Rationale:</em> Bypassing verification in production destroys the entire chain of trust established by the promotion gate.</p>
-      </article>
-      <article>
-        <h3>Embedded Credentials in Vendor Image</h3>
-        <p>Do upstream vendors accidentally bake credentials, private keys, or API tokens into their public container layers? <br>
-        <em>Boundary:</em> <strong>Enforced Prevention</strong>. The gate runs a secret scanner (<code>trivy image --scanners secret</code>) and fails the promotion if any credentials are found. <br>
-        <em>Rationale:</em> Blocking hardcoded secrets at the gate prevents leaked vendor credentials from being deployed to production environments.</p>
-      </article>
-    </div>
-  </section>
-
-  <section>
     <p class="kicker">THE DECISION MODEL</p>
     <h2>Six questions, one exact artifact pair</h2>
     <div class="grid">
@@ -123,13 +38,122 @@
     </div>
   </section>
 
+  <section>
+    <p class="kicker">WHAT TO LOOK OUT FOR</p>
+    <h2>Questions to ask before trusting any third-party image</h2>
+    <p class="note" style="margin-bottom: 2rem;">To establish clear accountability, every threat is mapped to the specific Decision Model question it compromises.</p>
+
+    <h3 style="margin-top: 2rem; border-bottom: 1px solid var(--line); padding-bottom: 0.5rem; color: var(--ink);">Intake & Source Risks</h3>
+    <div class="checklist">
+      <article>
+        <small style="display: block; font-family: monospace; color: var(--accent); margin-bottom: 0.3rem; font-weight: 700; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.05em;">Threatens: 01 Source</small>
+        <h3>Registry Takeover Risk</h3>
+        <p>Is the upstream registry account secure? Threat actors compromise maintainer accounts to distribute malicious updates. <br>
+        <em>Boundary:</em> <strong>Warning-Only</strong>. The gate warns on missing signatures, but cannot verify the original publisher account's security. <br>
+        <em>Incident:</em> The <strong>ua-parser-js library hijack (2021)</strong>, where compromised developer credentials were used to publish packages containing cryptomining malware (<a href="https://nvd.nist.gov/vuln/detail/CVE-2021-4229">CVE-2021-4229</a>).</p>
+      </article>
+      <article>
+        <small style="display: block; font-family: monospace; color: var(--accent); margin-bottom: 0.3rem; font-weight: 700; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.05em;">Threatens: 01 Source / 02 Identity</small>
+        <h3>Silent Tag Drift Risk</h3>
+        <p>Are we pulling mutable references? Relying on tags like <code>latest</code> allows upstream code to change without your knowledge. <br>
+        <em>Boundary:</em> <strong>Enforced Prevention</strong>. The ingestion gate requires resolving version tags to immutable digests first. Pinned digests cannot drift. <br>
+        <em>Incident:</em> The <strong>JFrog Docker Hub poisoning campaign (2024)</strong>, where threat actors uploaded over 4 million malicious, spoofed/drifted repositories to Docker Hub to distribute phishing scams and malware (<a href="https://jfrog.com/blog/malicious-images-docker-hub/">JFrog Research</a>).</p>
+      </article>
+      <article>
+        <small style="display: block; font-family: monospace; color: var(--accent); margin-bottom: 0.3rem; font-weight: 700; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.05em;">Threatens: 01 Source</small>
+        <h3>Third-Party Action Compromise</h3>
+        <p>Can third-party actions in GitHub workflows be updated or retagged to exfiltrate secrets or inject backdoors? <br>
+        <em>Boundary:</em> <strong>Enforced Prevention</strong>. All actions used in our promotion and CI workflows are pinned to immutable commit SHAs rather than mutable version tags. <br>
+        <em>Incident:</em> The <strong>tj-actions/changed-files compromise (March 2025)</strong>, where a compromised, retagged action (<a href="https://nvd.nist.gov/vuln/detail/CVE-2025-30066">CVE-2025-30066</a>) leaked CI secrets across thousands of downstream repositories.</p>
+      </article>
+    </div>
+
+    <h3 style="margin-top: 2.5rem; border-bottom: 1px solid var(--line); padding-bottom: 0.5rem; color: var(--ink);">Pipeline & Build Risks</h3>
+    <div class="checklist">
+      <article>
+        <small style="display: block; font-family: monospace; color: var(--accent); margin-bottom: 0.3rem; font-weight: 700; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.05em;">Threatens: 03 Composition</small>
+        <h3>Embedded Credentials in Vendor Image</h3>
+        <p>Do upstream vendors accidentally bake credentials, private keys, or API tokens into their public container layers? <br>
+        <em>Boundary:</em> <strong>Enforced Prevention</strong>. The gate runs a secret scanner (<code>trivy image --scanners secret</code>) and fails the promotion if any credentials are found. <br>
+        <em>Rationale:</em> Blocking hardcoded secrets at the gate prevents leaked vendor credentials from being deployed to production environments.</p>
+      </article>
+      <article>
+        <small style="display: block; font-family: monospace; color: var(--accent); margin-bottom: 0.3rem; font-weight: 700; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.05em;">Threatens: 03 Composition</small>
+        <h3>Socially Engineered Logic Bombs</h3>
+        <p>Is the codebase immune to malicious contributors? A contributor can spend years introducing obfuscated backdoors that static scans miss. <br>
+        <em>Boundary:</em> <strong>Structural Limitation</strong>. Static scans cannot detect intentional logical backdoors. The gate runs kernel-level eBPF tracing during smoke tests to monitor runtime executions, but this covers only active test paths. <br>
+        <em>Incident:</em> The <strong>XZ Utils backdoor (2024)</strong>, where a trusted maintainer spent years planting a sophisticated build-time SSH authentication bypass (<a href="https://nvd.nist.gov/vuln/detail/CVE-2024-3094">CVE-2024-3094</a>).</p>
+      </article>
+      <article>
+        <small style="display: block; font-family: monospace; color: var(--accent); margin-bottom: 0.3rem; font-weight: 700; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.05em;">Threatens: 01 Source / 04 Risk</small>
+        <h3>Pipeline Takeover & Token Theft</h3>
+        <p>Can the container compromise the build pipeline? A malicious dependency can execute install scripts to harvest secrets from ambient environment variables. <br>
+        <em>Boundary:</em> <strong>Partial Prevention</strong>. We use least-privilege, job-scoped tokens — the scanning job is read-only, and write scopes are confined to the promotion jobs. <br>
+        <em>Incident:</em> The <strong>Codecov Bash Uploader compromise (2021)</strong>, where a compromised script silently exfiltrated CI environment credentials (<a href="https://www.cisa.gov/news-events/alerts/2021/04/27/compromise-codecov-bash-uploader-script">CISA Alert AA21-117A</a>).</p>
+      </article>
+      <article>
+        <small style="display: block; font-family: monospace; color: var(--accent); margin-bottom: 0.3rem; font-weight: 700; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.05em;">Threatens: 03 Composition / 04 Risk</small>
+        <h3>Sidecar & Runner Exposure</h3>
+        <p>Are we verifying the entire bundle? Hardening the main application while leaving task runners or sidecars unverified leaves a backdoor. <br>
+        <em>Boundary:</em> <strong>Enforced</strong>. The policy configures that all companion runner images must be resolved to digests and evaluated under the same promotion rules. <br>
+        <em>Rationale:</em> Companion containers (such as unpinned local databases or runners) share the host's execution environment and can serve as entry points to otherwise secure workloads.</p>
+      </article>
+      <article>
+        <small style="display: block; font-family: monospace; color: var(--accent); margin-bottom: 0.3rem; font-weight: 700; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.05em;">Threatens: 04 Risk</small>
+        <h3>Container Escape & Privileges</h3>
+        <p>What is the worst-case blast radius? Running as root or with high capabilities enables container breakouts to the host. <br>
+        <em>Boundary:</em> <strong>Enforced at Merge</strong>. The gate scans deployment manifests for insecure configurations during repository merge checks, blocking insecure configurations from entering main (not at promotion). <br>
+        <em>Incident:</em> The <strong>runc container escape (2024)</strong>, where a runtime file descriptor leak allowed attackers to break container boundaries and gain host root access (<a href="https://nvd.nist.gov/vuln/detail/CVE-2024-21626">CVE-2024-21626</a>).</p>
+      </article>
+      <article>
+        <small style="display: block; font-family: monospace; color: var(--accent); margin-bottom: 0.3rem; font-weight: 700; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.05em;">Threatens: 05 Decision</small>
+        <h3>Waiver & Exception Decay</h3>
+        <p>Are exceptions auditable and expiring? Permanent exceptions become permanent backdoors. <br>
+        <em>Boundary:</em> <strong>Enforced</strong>. The workflow requires exceptions to target specific CVEs, document compensating controls, and declare an expiry date. <br>
+        <em>Incident:</em> The <strong>Equifax breach (2017)</strong>, where <a href="https://nvd.nist.gov/vuln/detail/CVE-2017-5638">CVE-2017-5638</a> in Apache Struts was known and patched upstream, but exposure persisted for months due to failed remediation and exception tracking (147 million records compromised).</p>
+      </article>
+      <article>
+        <small style="display: block; font-family: monospace; color: var(--accent); margin-bottom: 0.3rem; font-weight: 700; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.05em;">Threatens: 05 Decision</small>
+        <h3>Poisoned Pipeline Execution (PPE)</h3>
+        <p>Can a malicious pull request edit the gate's policy files (like <code>vulnerability-gate-policy.yml</code>) to weaken promotion thresholds? <br>
+        <em>Boundary:</em> <strong>Enforced by Branch Protection</strong>. Branch protection rules, required review approvals, and strict CODEOWNERS constraints prevent modifications to the <code>.github/</code> and <code>policy/</code> folders from being merged without administrator review. <br>
+        <em>Rationale:</em> Enforces segregation of duties by blocking pull requests from auto-merging policy modifications.</p>
+      </article>
+    </div>
+
+    <h3 style="margin-top: 2.5rem; border-bottom: 1px solid var(--line); padding-bottom: 0.5rem; color: var(--ink);">Post-Promotion & Deploy Risks</h3>
+    <div class="checklist">
+      <article>
+        <small style="display: block; font-family: monospace; color: var(--accent); margin-bottom: 0.3rem; font-weight: 700; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.05em;">Threatens: 04 Risk / 06 Continuity</small>
+        <h3>Post-Promotion Security Decay</h3>
+        <p>How do we handle new disclosures? An image that was clean at promotion decays as new vulnerabilities are discovered. <br>
+        <em>Boundary:</em> <strong>Partial (Active Detection)</strong>. The gate scans the deployed digest weekly, but cannot prevent zero-days exploited before public disclosure. <br>
+        <em>Incident:</em> The <strong>Cleo File Transfer campaign (December 2024)</strong>, where zero-day vulnerabilities were actively weaponized before patches or CVE records were published (<a href="https://nvd.nist.gov/vuln/detail/CVE-2024-50623">CVE-2024-50623</a>).</p>
+      </article>
+      <article>
+        <small style="display: block; font-family: monospace; color: var(--accent); margin-bottom: 0.3rem; font-weight: 700; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.05em;">Threatens: 02 Identity / 06 Continuity</small>
+        <h3>Compromised Registry Namespace</h3>
+        <p>If an attacker gains write access to our GHCR namespace, can they swap the trusted image? <br>
+        <em>Boundary:</em> <strong>Enforced by Attestation</strong>. The deployment installer does not trust registry name presence; it cryptographically verifies build attestations generated by our OIDC-backed workflow and pins the exact digests. <br>
+        <em>Rationale:</em> Attackers who compromise repository registry accounts cannot bypass admission control without also stealing the OIDC-backed signing credentials of the GitHub Actions runner.</p>
+      </article>
+      <article>
+        <small style="display: block; font-family: monospace; color: var(--accent); margin-bottom: 0.3rem; font-weight: 700; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.05em;">Threatens: 06 Continuity</small>
+        <h3>Verification Bypass at Deploy</h3>
+        <p>Can developers deploy promoted images in `--insecure-lab-mode`, bypassing attestation checks entirely? <br>
+        <em>Boundary:</em> <strong>Structural Limitation</strong>. The installer allows disabling checks for local development. In production, this escape hatch must be blocked by container admission controllers (like Kyverno or Gatekeeper). <br>
+        <em>Rationale:</em> Bypassing verification in production destroys the entire chain of trust established by the promotion gate.</p>
+      </article>
+    </div>
+  </section>
+
   <section class="flow">
     <p class="kicker">CONTROLLED PROMOTION</p>
     <h2>Quarantine → assess → decide → attest → deploy → re-check</h2>
     <p>The upstream image is never treated as internally trusted merely because it can be pulled. ArtifactGate resolves the digest first, evaluates the application and runner together, fails closed when required evidence is unknown, and promotes the accepted pair into a controlled namespace. Deployment verifies GitHub OIDC-backed attestations and pins both digests.</p>
 
     <!-- Visual Architecture & Workflow Diagram -->
-    <svg class="flow-svg" viewBox="0 0 800 220" width="100%" height="auto" style="margin-top: 2rem; padding: 1.5rem;">
+    <svg class="flow-svg" viewBox="0 0 920 370" width="100%" height="auto" style="margin-top: 2rem; padding: 1.5rem;">
       <!-- Definitions for gradients and markers -->
       <defs>
         <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
@@ -146,42 +170,75 @@
       </defs>
 
       <!-- Left: Untrusted Upstream -->
-      <rect x="20" y="40" width="160" height="140" rx="6" fill="url(#untrusted-grad)" stroke="#ea4335" stroke-width="1.5" />
-      <text x="100" y="70" text-anchor="middle" font-weight="bold" font-size="13" font-family="system-ui, sans-serif" fill="#c5221f">Upstream Registry</text>
-      <text x="100" y="92" text-anchor="middle" font-size="11" font-family="system-ui, sans-serif" fill="#c5221f">(Untrusted Input)</text>
-      <text x="100" y="125" text-anchor="middle" font-family="monospace" font-size="11" fill="#7f1d1d">n8nio/n8n:latest</text>
-      <text x="100" y="148" text-anchor="middle" font-size="10" font-family="system-ui, sans-serif" fill="#7f1d1d">[Mutable Tag]</text>
+      <rect x="20" y="60" width="150" height="120" rx="6" fill="url(#untrusted-grad)" stroke="#ea4335" stroke-width="1.5" />
+      <text x="95" y="85" text-anchor="middle" font-weight="bold" font-size="12" font-family="system-ui, sans-serif" fill="#c5221f">Upstream Registry</text>
+      <text x="95" y="105" text-anchor="middle" font-size="10" font-family="system-ui, sans-serif" fill="#c5221f">(Untrusted Input)</text>
+      <text x="95" y="135" text-anchor="middle" font-family="monospace" font-size="10" fill="#7f1d1d">n8nio/n8n:latest</text>
+      <text x="95" y="155" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="#7f1d1d">[Mutable Tag]</text>
 
       <!-- Flow Arrow 1 -->
-      <line x1="180" x2="230" y1="110" y2="110" stroke="#2457d6" stroke-width="2" marker-end="url(#arrow)" />
+      <line x1="170" x2="220" y1="120" y2="120" stroke="#2457d6" stroke-width="2" marker-end="url(#arrow)" />
 
       <!-- Middle: Quarantine & Promotion Gate -->
-      <rect x="240" y="20" width="320" height="180" rx="8" fill="#ffffff" stroke="#2457d6" stroke-width="2" stroke-dasharray="4 4" />
-      <text x="400" y="42" text-anchor="middle" font-weight="bold" font-size="13" font-family="system-ui, sans-serif" fill="#2457d6">ArtifactGate Promotion Pipeline</text>
+      <rect x="220" y="20" width="470" height="240" rx="8" fill="#ffffff" stroke="#2457d6" stroke-width="2" stroke-dasharray="4 4" />
+      <text x="455" y="42" text-anchor="middle" font-weight="bold" font-size="13" font-family="system-ui, sans-serif" fill="#2457d6">ArtifactGate Promotion Pipeline (GitHub Actions)</text>
 
-      <!-- Box inside Gate: Static & Dynamic Scanners -->
-      <rect x="256" y="60" width="138" height="115" rx="4" fill="#f8fafc" stroke="#d7dee7" />
-      <text x="325" y="78" text-anchor="middle" font-weight="bold" font-size="11" font-family="system-ui, sans-serif" fill="#111827">1. Scan & Observe</text>
-      <text x="266" y="105" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• Trivy SBOM & CVEs</text>
-      <text x="266" y="125" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• OWASP ZAP DAST</text>
-      <text x="266" y="145" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• Tracee runtime eBPF</text>
+      <!-- Box inside Gate: Scan & Observe -->
+      <rect x="235" y="60" width="195" height="185" rx="4" fill="#f8fafc" stroke="#d7dee7" />
+      <text x="332" y="78" text-anchor="middle" font-weight="bold" font-size="11" font-family="system-ui, sans-serif" fill="#111827">1. Scan & Observe</text>
+      <text x="245" y="102" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• Trivy SBOM & CVE Scan</text>
+      <text x="245" y="120" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• ClamAV Malware Scan</text>
+      <text x="245" y="138" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• OWASP ZAP DAST Scan</text>
+      <text x="245" y="156" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• Tracee runtime eBPF</text>
+      <text x="245" y="174" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• Vendor Signature Check</text>
+      <text x="245" y="192" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• Secret & Licence Scan</text>
+      <text x="245" y="210" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• Image Allowlist Ingestion</text>
 
-      <!-- Box inside Gate: Policy Decision -->
-      <rect x="406" y="60" width="138" height="115" rx="4" fill="#f8fafc" stroke="#d7dee7" />
-      <text x="475" y="78" text-anchor="middle" font-weight="bold" font-size="11" font-family="system-ui, sans-serif" fill="#111827">2. Evaluate & Decide</text>
-      <text x="416" y="105" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• KEV & EPSS enrichment</text>
-      <text x="416" y="125" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• Fail-closed gate policies</text>
-      <text x="416" y="145" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• Sign OpenVEX exceptions</text>
+      <!-- Box inside Gate: Evaluate & Decide -->
+      <rect x="475" y="60" width="195" height="185" rx="4" fill="#f8fafc" stroke="#d7dee7" />
+      <text x="572" y="78" text-anchor="middle" font-weight="bold" font-size="11" font-family="system-ui, sans-serif" fill="#111827">2. Evaluate & Decide</text>
+      <text x="485" y="102" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• KEV & EPSS Enrichment</text>
+      <text x="485" y="120" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• Age & Policy Gating</text>
+      <text x="485" y="138" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• OpenVEX Waiver Check</text>
+      <text x="485" y="156" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• ZAP Rules.tsv Tuning</text>
+      <text x="485" y="174" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• Fail-closed Decider</text>
+      <text x="485" y="192" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• Cosign Keyless Sign & Attest</text>
+      <text x="485" y="210" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• OIDC Identity Bind</text>
 
-      <!-- Flow Arrow 2 -->
-      <line x1="560" x2="610" y1="110" y2="110" stroke="#2457d6" stroke-width="2" marker-end="url(#arrow)" />
+      <!-- Flow Arrow 2 (Success) -->
+      <line x1="690" x2="740" y1="120" y2="120" stroke="#2457d6" stroke-width="2" marker-end="url(#arrow)" />
 
       <!-- Right: Promoted Namespace -->
-      <rect x="620" y="40" width="160" height="140" rx="6" fill="url(#trusted-grad)" stroke="#34a853" stroke-width="1.5" />
-      <text x="700" y="70" text-anchor="middle" font-weight="bold" font-size="13" font-family="system-ui, sans-serif" fill="#137333">GHCR Namespace</text>
-      <text x="700" y="92" text-anchor="middle" font-size="11" font-family="system-ui, sans-serif" fill="#137333">(Assured Output)</text>
-      <text x="700" y="125" text-anchor="middle" font-family="monospace" font-size="11" fill="#14532d">n8n-trusted@sha256</text>
-      <text x="700" y="148" text-anchor="middle" font-size="10" font-family="system-ui, sans-serif" fill="#14532d">[Immutable Digest]</text>
+      <rect x="740" y="60" width="160" height="120" rx="6" fill="url(#trusted-grad)" stroke="#34a853" stroke-width="1.5" />
+      <text x="820" y="85" text-anchor="middle" font-weight="bold" font-size="12" font-family="system-ui, sans-serif" fill="#137333">GHCR Namespace</text>
+      <text x="820" y="105" text-anchor="middle" font-size="10" font-family="system-ui, sans-serif" fill="#137333">(Assured Output)</text>
+      <text x="820" y="135" text-anchor="middle" font-family="monospace" font-size="10" fill="#14532d">n8n-trusted@sha256</text>
+      <text x="820" y="155" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="#14532d">[Cosign Signed]</text>
+
+      <!-- Arrow 3 (Admission / Deploy) -->
+      <line x1="820" x2="820" y1="180" y2="280" stroke="#2457d6" stroke-width="2" marker-end="url(#arrow)" />
+      <text x="830" y="235" font-size="10" font-family="system-ui, sans-serif" fill="#5f6368" font-weight="bold">Verify & Pin</text>
+
+      <!-- Production Workload (install.sh) -->
+      <rect x="740" y="280" width="160" height="70" rx="6" fill="#f8fafc" stroke="#d7dee7" stroke-width="1.5" />
+      <text x="820" y="305" text-anchor="middle" font-weight="bold" font-size="11" font-family="system-ui, sans-serif" fill="#111827">Production Workload</text>
+      <text x="820" y="325" text-anchor="middle" font-size="10" font-family="system-ui, sans-serif" fill="#475569">install.sh Admission</text>
+
+      <!-- Rejection Path -->
+      <line x1="572" x2="572" y1="245" y2="280" stroke="#ea4335" stroke-width="2" marker-end="url(#arrow)" />
+      <text x="580" y="263" font-size="10" font-family="system-ui, sans-serif" fill="#ea4335" font-weight="bold">Gate Block</text>
+
+      <!-- Manual Review Box -->
+      <rect x="445" y="280" width="250" height="70" rx="6" fill="#fef7e0" stroke="#b06000" stroke-width="1.5" stroke-dasharray="2 2" />
+      <text x="570" y="305" text-anchor="middle" font-weight="bold" font-size="11" font-family="system-ui, sans-serif" fill="#b06000">Manual Review & Exception</text>
+      <text x="570" y="325" text-anchor="middle" font-size="10" font-family="system-ui, sans-serif" fill="#b06000">expiring waiver + env approval</text>
+
+      <!-- Rejoin Success Path -->
+      <path d="M 695 315 L 720 315 L 720 120" stroke="#b06000" stroke-width="1.5" fill="none" />
+
+      <!-- Weekly Re-Scan Loop -->
+      <path d="M 740 315 L 205 315 L 205 130" stroke="#1a73e8" stroke-dasharray="4 4" stroke-width="1.5" fill="none" marker-end="url(#arrow)" />
+      <text x="215" y="295" font-size="10" font-family="system-ui, sans-serif" fill="#1a73e8" font-weight="bold">Weekly Re-Scan Loop</text>
     </svg>
 
     <!-- Interactive Step-by-Step Flowchart Cards -->
@@ -189,8 +246,8 @@
       <div class="flow-step">
         <div class="step-num">01</div>
         <div class="step-card">
-          <h4>Intake & Resolution</h4>
-          <p>Upstream version tags (e.g. <code>latest</code>) are immediately resolved to immutable OCI digests at source intake, stopping silent tag drift and spoofing attacks.</p>
+          <h4>Intake, Allowlist & Signature Check</h4>
+          <p>Enforces the source registry allowlist, resolves mutable version tags to immutable digests, and validates upstream vendor signatures using Cosign.</p>
           <span class="step-badge prevention">Preventive</span>
         </div>
       </div>
@@ -199,8 +256,8 @@
         <div class="step-num">02</div>
         <div class="step-card">
           <h4>Static Scanning</h4>
-          <p>The container layers are statically scanned with Trivy to build a complete SBOM (SPDX) and inventory all vulnerabilities, licensing liabilities, and secrets.</p>
-          <span class="step-badge prevention">Preventive</span>
+          <p>Container layers are statically scanned for vulnerabilities (CVEs), secrets, and licensing liabilities with Trivy, and cross-referenced for malware with ClamAV.</p>
+          <span class="step-badge mixed">Mixed</span>
         </div>
       </div>
       
@@ -208,8 +265,8 @@
         <div class="step-num">03</div>
         <div class="step-card">
           <h4>Dynamic Observation</h4>
-          <p>The image is executed in quarantine. Tracee collects eBPF-level runtime logs to flag malicious calls, while OWASP ZAP runs active DAST against the live container.</p>
-          <span class="step-badge detection">Detective</span>
+          <p>The image runs in a quarantine sandbox. Tracee uses eBPF syscall tracing to capture execution behaviors, and OWASP ZAP runs active DAST scans to block high risk alerts.</p>
+          <span class="step-badge prevention">Preventive</span>
         </div>
       </div>
       
@@ -226,7 +283,7 @@
         <div class="step-num">05</div>
         <div class="step-card">
           <h4>Attestation & Signing</h4>
-          <p>Approved image pairs are promoted to GHCR. Cryptographic attestations (provenance, SBOM, OpenVEX) are generated and signed via GitHub OIDC identity and Cosign.</p>
+          <p>Approved image pairs are promoted to GHCR. Cryptographic attestations (provenance, SBOM) and keyless signatures with OpenVEX exception rules are signed via Cosign.</p>
           <span class="step-badge attestation">Attestation</span>
         </div>
       </div>
@@ -235,7 +292,7 @@
         <div class="step-num">06</div>
         <div class="step-card">
           <h4>Admission & Re-Scan</h4>
-          <p>Production deploys verify attestations and deploy only digest-pinned builds. Active releases are weekly re-scanned to detect post-release security decay.</p>
+          <p>Workloads are digest-pinned. The <code>install.sh</code> script runs OIDC verification checks before boot. Weekly rescans check the promoted digest for post-release vulnerability decay.</p>
           <span class="step-badge corrective">Corrective</span>
         </div>
       </div>
@@ -248,6 +305,7 @@
     <div class="table-scroll"><table class="rule-table">
       <thead>
         <tr>
+          <th scope="col">Question</th>
           <th scope="col">Control</th>
           <th scope="col">Risk Addressed</th>
           <th scope="col">Function</th>
@@ -258,6 +316,7 @@
       </thead>
       <tbody>
         <tr>
+          <td><code>01 Source</code></td>
           <th scope="row">Source Ingestion Allowlist</th>
           <td>Rogue tag intake & untrusted vendors</td>
           <td>Preventive</td>
@@ -266,6 +325,7 @@
           <td><a href="https://github.com/llody9977/artifactgate/blob/main/policy/image-ingestion-policy.yml">image-ingestion-policy.yml</a></td>
         </tr>
         <tr>
+          <td><code>02 Identity</code></td>
           <th scope="row">OCI Digest Resolution</th>
           <td>Tag drift & tag poisoning</td>
           <td>Preventive</td>
@@ -274,14 +334,25 @@
           <td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/workflows/image-promotion.yml">image-promotion.yml</a></td>
         </tr>
         <tr>
-          <th scope="row"><a href="https://aquasecurity.github.io/trivy/">Trivy</a> Malware & Secret Scan</th>
-          <td>Embedded secrets, keys, and malware</td>
+          <td><code>03 Composition</code></td>
+          <th scope="row"><a href="https://aquasecurity.github.io/trivy/">Trivy</a> Secret Scan</th>
+          <td>Embedded secrets, tokens, and credentials</td>
           <td>Preventive</td>
           <td>Promotion Gate</td>
           <td><strong>Blocking</strong></td>
           <td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/workflows/image-promotion.yml">image-promotion.yml</a></td>
         </tr>
         <tr>
+          <td><code>03 Composition</code></td>
+          <th scope="row">ClamAV Malware Scan</th>
+          <td>Known trojans and malicious binaries</td>
+          <td>Preventive</td>
+          <td>Promotion Gate</td>
+          <td><strong>Blocking</strong></td>
+          <td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/workflows/image-promotion.yml">image-promotion.yml</a></td>
+        </tr>
+        <tr>
+          <td><code>04 Risk</code></td>
           <th scope="row"><a href="https://www.zaproxy.org/">OWASP ZAP</a> DAST Scan</th>
           <td>Runtime network / HTTP vulnerabilities</td>
           <td>Preventive</td>
@@ -290,6 +361,7 @@
           <td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/scripts/run_tracee_reachability.sh">run_tracee_reachability.sh</a></td>
         </tr>
         <tr>
+          <td><code>03 Composition</code></td>
           <th scope="row"><a href="https://aquasecurity.github.io/trivy/">Trivy</a> Licence Scan</th>
           <td>Copyleft licence liabilities</td>
           <td>Detective</td>
@@ -298,6 +370,7 @@
           <td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/workflows/image-promotion.yml">image-promotion.yml</a></td>
         </tr>
         <tr>
+          <td><code>04 Risk</code></td>
           <th scope="row">Runtime eBPF (<a href="https://aquasecurity.github.io/tracee/">Tracee</a>) Observation</th>
           <td>Logic bombs & active execution paths</td>
           <td>Detective</td>
@@ -306,6 +379,7 @@
           <td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/scripts/merge_tracee_reachability.py">merge_tracee_reachability.py</a></td>
         </tr>
         <tr>
+          <td><code>04 Risk</code></td>
           <th scope="row">Vulnerability Risk Enrichment</th>
           <td>Vulnerability exploitation (<a href="https://www.cisa.gov/known-exploited-vulnerabilities-catalog">KEV</a>/<a href="https://www.first.org/epss/">EPSS</a>/Age)</td>
           <td>Preventive</td>
@@ -314,6 +388,7 @@
           <td><a href="https://github.com/llody9977/artifactgate/blob/main/policy/vulnerability-gate-policy.yml">vulnerability-gate-policy.yml</a></td>
         </tr>
         <tr>
+          <td><code>01 Source / 05 Decision</code></td>
           <th scope="row">Actions SHA Pinning & Tokens</th>
           <td>Pipeline takeover & third-party compromises</td>
           <td>Preventive</td>
@@ -322,6 +397,7 @@
           <td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/workflows/ci.yml">Workflow Configurations</a></td>
         </tr>
         <tr>
+          <td><code>02 Identity / 06 Continuity</code></td>
           <th scope="row">OIDC Provenance & SBOM (<a href="https://openvex.dev/">OpenVEX</a>)</th>
           <td>Registry bypass & image swapping</td>
           <td>Preventive</td>
@@ -330,6 +406,7 @@
           <td><a href="https://github.com/llody9977/artifactgate/blob/main/iac/n8n/install.sh">install.sh</a></td>
         </tr>
         <tr>
+          <td><code>06 Continuity</code></td>
           <th scope="row">Continuous Re-Scanning</th>
           <td>Post-promotion security decay</td>
           <td>Corrective</td>

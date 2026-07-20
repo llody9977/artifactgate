@@ -258,6 +258,8 @@ jobs:
 
       - name: Enrich findings with KEV, EPSS, and age
         id: enrich-findings
+        env:
+          ZAP_REPORT_FILE: tracee-output/zap-report.json
         run: |
           curl --fail --show-error --location --retry 3 -o kev.json https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json
           jq -e '.vulnerabilities | type == "array" and length > 1000' kev.json >/dev/null
@@ -481,7 +483,7 @@ jobs:
           echo "runner_digest=$RUNNER_GHCR_DIGEST" >> "$GITHUB_OUTPUT"
 
       - name: Attest Build Provenance
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        uses: actions/attest@59d89426e2e5050f249591410113c4c114ea0f3a # v1.4.0 (consolidated)
         with:
           subject-name: ghcr.io/${{ github.repository }}/n8n-trusted
           subject-digest: ${{ steps.docker_push.outputs.digest }}
@@ -489,7 +491,7 @@ jobs:
           show-summary: false
 
       - name: Attest task runner provenance
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        uses: actions/attest@59d89426e2e5050f249591410113c4c114ea0f3a # v1.4.0 (consolidated)
         with:
           subject-name: ghcr.io/${{ github.repository }}/n8n-runners-trusted
           subject-digest: ${{ steps.docker_push.outputs.runner_digest }}
@@ -509,7 +511,7 @@ jobs:
           echo "SBOM generated: $(jq '.packages | length' sbom.spdx.json) packages"
 
       - name: Attest SBOM
-        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        uses: actions/attest@59d89426e2e5050f249591410113c4c114ea0f3a # v1.4.0 (consolidated)
         with:
           subject-name: ghcr.io/${{ github.repository }}/n8n-trusted
           subject-digest: ${{ steps.docker_push.outputs.digest }}
@@ -518,7 +520,7 @@ jobs:
           show-summary: false
 
       - name: Attest task runner SBOM
-        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        uses: actions/attest@59d89426e2e5050f249591410113c4c114ea0f3a # v1.4.0 (consolidated)
         with:
           subject-name: ghcr.io/${{ github.repository }}/n8n-runners-trusted
           subject-digest: ${{ steps.docker_push.outputs.runner_digest }}
@@ -526,10 +528,24 @@ jobs:
           push-to-registry: true
           show-summary: false
 
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@59acb6260d9c0ba8f4a2f9d9b48431a222b68e20 # v3.5.0
+
+      - name: Cosign Sign Promoted Images (Keyless)
+        run: |
+          cosign sign --yes "ghcr.io/${{ github.repository }}/n8n-trusted@${{ steps.docker_push.outputs.digest }}"
+          cosign sign --yes "ghcr.io/${{ github.repository }}/n8n-runners-trusted@${{ steps.docker_push.outputs.runner_digest }}"
+
+      - name: Cosign Attest OpenVEX Exception Document (Keyless)
+        run: |
+          cosign attest --yes --type openvex --predicate ./vex.json "ghcr.io/${{ github.repository }}/n8n-trusted@${{ steps.docker_push.outputs.digest }}"
+          cosign attest --yes --type openvex --predicate ./vex.json "ghcr.io/${{ github.repository }}/n8n-runners-trusted@${{ steps.docker_push.outputs.runner_digest }}"
+
       - name: Add Attestations Summary
         run: |
           echo "### 🛡️ Security Attestations" >> $GITHUB_STEP_SUMMARY
           echo "✅ **SLSA Build Provenance** and **SBOM** have been securely attested to the image digest \`${{ steps.docker_push.outputs.digest }}\`." >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Cosign signatures** and **OpenVEX exception documents** have also been attested keylessly." >> $GITHUB_STEP_SUMMARY
 
       - name: Create GitHub Release with rollback info
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v2
@@ -673,7 +689,7 @@ jobs:
           echo "runner_digest=$RUNNER_GHCR_DIGEST" >> "$GITHUB_OUTPUT"
 
       - name: Attest Build Provenance
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        uses: actions/attest@59d89426e2e5050f249591410113c4c114ea0f3a # v1.4.0 (consolidated)
         with:
           subject-name: ghcr.io/${{ github.repository }}/n8n-trusted
           subject-digest: ${{ steps.docker_push.outputs.digest }}
@@ -681,7 +697,7 @@ jobs:
           show-summary: false
 
       - name: Attest task runner provenance
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        uses: actions/attest@59d89426e2e5050f249591410113c4c114ea0f3a # v1.4.0 (consolidated)
         with:
           subject-name: ghcr.io/${{ github.repository }}/n8n-runners-trusted
           subject-digest: ${{ steps.docker_push.outputs.runner_digest }}
@@ -699,7 +715,7 @@ jobs:
           echo "SBOM generated: $(jq '.packages | length' sbom.spdx.json) packages"
 
       - name: Attest SBOM
-        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        uses: actions/attest@59d89426e2e5050f249591410113c4c114ea0f3a # v1.4.0 (consolidated)
         with:
           subject-name: ghcr.io/${{ github.repository }}/n8n-trusted
           subject-digest: ${{ steps.docker_push.outputs.digest }}
@@ -708,7 +724,7 @@ jobs:
           show-summary: false
 
       - name: Attest task runner SBOM
-        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        uses: actions/attest@59d89426e2e5050f249591410113c4c114ea0f3a # v1.4.0 (consolidated)
         with:
           subject-name: ghcr.io/${{ github.repository }}/n8n-runners-trusted
           subject-digest: ${{ steps.docker_push.outputs.runner_digest }}
@@ -716,10 +732,24 @@ jobs:
           push-to-registry: true
           show-summary: false
 
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@59acb6260d9c0ba8f4a2f9d9b48431a222b68e20 # v3.5.0
+
+      - name: Cosign Sign Promoted Images (Keyless)
+        run: |
+          cosign sign --yes "ghcr.io/${{ github.repository }}/n8n-trusted@${{ steps.docker_push.outputs.digest }}"
+          cosign sign --yes "ghcr.io/${{ github.repository }}/n8n-runners-trusted@${{ steps.docker_push.outputs.runner_digest }}"
+
+      - name: Cosign Attest OpenVEX Exception Document (Keyless)
+        run: |
+          cosign attest --yes --type openvex --predicate ./vex.json "ghcr.io/${{ github.repository }}/n8n-trusted@${{ steps.docker_push.outputs.digest }}"
+          cosign attest --yes --type openvex --predicate ./vex.json "ghcr.io/${{ github.repository }}/n8n-runners-trusted@${{ steps.docker_push.outputs.runner_digest }}"
+
       - name: Add Attestations Summary
         run: |
           echo "### 🛡️ Security Attestations" >> $GITHUB_STEP_SUMMARY
           echo "✅ **SLSA Build Provenance** and **SBOM** have been securely attested to the image digest \`${{ steps.docker_push.outputs.digest }}\`." >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Cosign signatures** and **OpenVEX exception documents** have also been attested keylessly." >> $GITHUB_STEP_SUMMARY
 
       - name: Create GitHub Release with rollback info
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v2

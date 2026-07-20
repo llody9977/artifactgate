@@ -55,7 +55,7 @@ The promotion pipeline handles images in a strict, zero-trust workflow:
                        Fail-Closed Rules         - Signed SPDX SBOM Metadata
                               |                  - Signed OpenVEX Exception Docs
                               v
-                      [ GHCR Namespace ] --> ( Kubernetes Admission Controller )
+                      [ GHCR Namespace ] --> ( install.sh Admission Check )
                        n8n-trusted@sha           - Verify OIDC workflow identity
                       (Immutable Digest)         - Weekly continuous re-scans
 ```
@@ -66,8 +66,8 @@ The promotion pipeline handles images in a strict, zero-trust workflow:
 2. **Static Vulnerability & Threat Scan**: Trivy extracts a complete SPDX SBOM and scans container layers for secrets, licensing liabilities, and vulnerability CVE records.
 3. **Dynamic Observation**: The container is executed in a quarantine test harness. **Tracee** uses kernel-level eBPF tracing to audit loaded shared libraries and system calls. **OWASP ZAP** performs a DAST baseline scan to identify web interface exposures.
 4. **Policy Decision Engine**: Scans are enriched with real-time risk metrics (CISA KEV catalog active exploitation status and FIRST EPSS exploit probability). If the image violates rules in `vulnerability-gate-policy.yml` (e.g. active KEV exploits or high-risk unknown items), it fails closed. High-risk items require documented, expiring OpenVEX waivers approved in the GitHub Actions environment.
-5. **OIDC Promotion & Attestation**: Approved image pairs are copied to the protected `secure-ci-deploy/n8n-trusted` registry path. The promotion workflow generates and signs build provenance, SBOM declarations, and OpenVEX files using Cosign and OIDC-backed runner keys.
-6. **Admission Verification & Re-scanning**: Workloads are deployed using their exact SHA256 digests. Production admission checkers verify OIDC-backed signatures before initialization. Deployed builds are re-scanned weekly on a cron schedule to check for post-release security decay.
+5. **OIDC Promotion & Attestation**: Approved image pairs are copied to the protected `llody9977/artifactgate/n8n-trusted` registry path. The promotion workflow generates and signs build provenance, SBOM declarations, and OpenVEX files using Cosign and OIDC-backed runner keys.
+6. **Admission Verification & Re-scanning**: Workloads are deployed using their exact SHA256 digests. The `install.sh` installer runs `cosign verify` and `gh attestation verify` for both subjects before initialization, failing closed unless `--insecure-lab-mode` is configured. Deployed builds are re-scanned weekly on a cron schedule to check for post-release security decay.
 
 ## Standards-Informed Framing
 
