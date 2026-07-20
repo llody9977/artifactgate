@@ -1,0 +1,3 @@
+# ZAP DAST Alert Tuning Rules (TSV)
+# Format: Alert_ID	Alert_Name	Action	Rationale/Compensating_Control
+# Example: 10020	X-Frame-Options Header Not Set	IGNORE	Compensated by strict CSP and network quarantine.

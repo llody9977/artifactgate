@@ -139,6 +139,10 @@ footer { margin-top: 5rem; padding-top: 1.5rem; border-top: 1px solid var(--line
   background: #fce8e6;
   color: #c5221f;
 }
+.step-badge.mixed {
+  background: #f3e5f5;
+  color: #4a148c;
+}
 .flow-svg {
   display: block;
   margin-bottom: 1rem;

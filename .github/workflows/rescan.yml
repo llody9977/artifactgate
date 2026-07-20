@@ -163,6 +163,7 @@ jobs:
               "rescan-$VERSION.tracee.json" "rescan-$VERSION.runner.annotated.json" \
               > "rescan-$VERSION.combined.json"
           mv "rescan-$VERSION.combined.json" "rescan-$VERSION.tracee.json"
+          export ZAP_REPORT_FILE="tracee-$VERSION/zap-report.json"
           python3 .github/scripts/enrich_findings.py "rescan-$VERSION.tracee.json" kev.json "rescan-$VERSION.json"
 
           # Count findings by severity

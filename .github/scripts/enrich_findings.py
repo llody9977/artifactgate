@@ -180,6 +180,56 @@ def main():
         vuln["GateDecision"] = gate_decision
         vuln["GateReasons"] = sorted(set(gate_reasons))
 
+    # DAST / ZAP baseline check
+    zap_report_path = os.environ.get("ZAP_REPORT_FILE")
+    if zap_report_path:
+        zap_manual_review = False
+        zap_reasons = []
+
+        # Read rules.tsv if exists
+        zap_rules_path = ".zap/rules.tsv"
+        ignored_alert_ids = set()
+        if os.path.exists(zap_rules_path):
+            try:
+                with open(zap_rules_path) as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+                        parts = line.split("\t")
+                        if len(parts) >= 3 and parts[2].strip().upper() == "IGNORE":
+                            ignored_alert_ids.add(parts[0].strip())
+            except Exception as exc:
+                print(f"Warning: Failed to load ZAP rules file: {exc}", file=sys.stderr)
+
+        if not os.path.exists(zap_report_path):
+            zap_manual_review = True
+            zap_reasons.append("dast_report_missing")
+        else:
+            try:
+                with open(zap_report_path) as f:
+                    zap_data = json.load(f)
+                high_alerts = 0
+                for site in zap_data.get("site", []):
+                    for alert in site.get("alerts", []):
+                        alert_id = alert.get("pluginid")
+                        risk_code = alert.get("riskcode")
+                        if risk_code == "3":
+                            if alert_id in ignored_alert_ids:
+                                print(f"DAST Info: Ignoring ZAP alert {alert_id} ({alert.get('alert', '')}) per .zap/rules.tsv")
+                                continue
+                            high_alerts += 1
+                if high_alerts > 0:
+                    zap_manual_review = True
+                    zap_reasons.append(f"dast_high_risk_alerts_{high_alerts}")
+            except Exception as exc:
+                zap_manual_review = True
+                zap_reasons.append("dast_report_malformed")
+
+        if zap_manual_review:
+            summary["manual_review_count"] += 1
+            summary["zap_reasons"] = zap_reasons
+
     summary["requires_manual_review"] = summary["manual_review_count"] > 0
     summary["auto_promotion_allowed"] = not summary["requires_manual_review"]
     report["AnalysisSummary"] = summary
