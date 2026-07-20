@@ -64,3 +64,96 @@ footer { margin-top: 5rem; padding-top: 1.5rem; border-top: 1px solid var(--line
   .actions { align-items: flex-start; flex-direction: column; }
   dl { grid-template-columns: 90px 1fr; }
 }
+
+/* Flowchart & Diagram styling */
+.flowchart {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+  margin-top: 2rem;
+  margin-bottom: 2rem;
+}
+.flow-step {
+  display: flex;
+  flex-direction: column;
+}
+.step-num {
+  font-family: monospace;
+  font-size: .8rem;
+  color: var(--accent);
+  margin-bottom: 0.4rem;
+  font-weight: 700;
+  letter-spacing: .08em;
+}
+.step-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  padding: 1.25rem;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.step-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent);
+  box-shadow: 0 4px 12px rgba(36, 87, 214, 0.08);
+}
+.step-card h4 {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  font-size: 1rem;
+  color: var(--ink);
+  font-weight: 600;
+}
+.step-card p {
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--muted);
+  margin: 0 0 1rem 0;
+  flex-grow: 1;
+}
+.step-badge {
+  align-self: flex-start;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 0.18rem 0.45rem;
+  border-radius: 3px;
+  letter-spacing: 0.05em;
+}
+.step-badge.prevention {
+  background: #e6f4ea;
+  color: #137333;
+}
+.step-badge.detection {
+  background: #fef7e0;
+  color: #b06000;
+}
+.step-badge.attestation {
+  background: #e8f0fe;
+  color: #1a73e8;
+}
+.step-badge.corrective {
+  background: #fce8e6;
+  color: #c5221f;
+}
+.flow-svg {
+  display: block;
+  margin-bottom: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel);
+}
+
+@media (max-width: 900px) {
+  .flowchart {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 600px) {
+  .flowchart {
+    grid-template-columns: 1fr;
+  }
+}

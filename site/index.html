@@ -127,6 +127,119 @@
     <p class="kicker">CONTROLLED PROMOTION</p>
     <h2>Quarantine → assess → decide → attest → deploy → re-check</h2>
     <p>The upstream image is never treated as internally trusted merely because it can be pulled. ArtifactGate resolves the digest first, evaluates the application and runner together, fails closed when required evidence is unknown, and promotes the accepted pair into a controlled namespace. Deployment verifies GitHub OIDC-backed attestations and pins both digests.</p>
+
+    <!-- Visual Architecture & Workflow Diagram -->
+    <svg class="flow-svg" viewBox="0 0 800 220" width="100%" height="auto" style="margin-top: 2rem; padding: 1.5rem;">
+      <!-- Definitions for gradients and markers -->
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#2457d6" />
+        </marker>
+        <linearGradient id="untrusted-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#fce8e6" />
+          <stop offset="100%" stop-color="#fad2cf" />
+        </linearGradient>
+        <linearGradient id="trusted-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#e6f4ea" />
+          <stop offset="100%" stop-color="#ceead6" />
+        </linearGradient>
+      </defs>
+
+      <!-- Left: Untrusted Upstream -->
+      <rect x="20" y="40" width="160" height="140" rx="6" fill="url(#untrusted-grad)" stroke="#ea4335" stroke-width="1.5" />
+      <text x="100" y="70" text-anchor="middle" font-weight="bold" font-size="13" font-family="system-ui, sans-serif" fill="#c5221f">Upstream Registry</text>
+      <text x="100" y="92" text-anchor="middle" font-size="11" font-family="system-ui, sans-serif" fill="#c5221f">(Untrusted Input)</text>
+      <text x="100" y="125" text-anchor="middle" font-family="monospace" font-size="11" fill="#7f1d1d">n8nio/n8n:latest</text>
+      <text x="100" y="148" text-anchor="middle" font-size="10" font-family="system-ui, sans-serif" fill="#7f1d1d">[Mutable Tag]</text>
+
+      <!-- Flow Arrow 1 -->
+      <line x1="180" x2="230" y1="110" y2="110" stroke="#2457d6" stroke-width="2" marker-end="url(#arrow)" />
+
+      <!-- Middle: Quarantine & Promotion Gate -->
+      <rect x="240" y="20" width="320" height="180" rx="8" fill="#ffffff" stroke="#2457d6" stroke-width="2" stroke-dasharray="4 4" />
+      <text x="400" y="42" text-anchor="middle" font-weight="bold" font-size="13" font-family="system-ui, sans-serif" fill="#2457d6">ArtifactGate Promotion Pipeline</text>
+
+      <!-- Box inside Gate: Static & Dynamic Scanners -->
+      <rect x="256" y="60" width="138" height="115" rx="4" fill="#f8fafc" stroke="#d7dee7" />
+      <text x="325" y="78" text-anchor="middle" font-weight="bold" font-size="11" font-family="system-ui, sans-serif" fill="#111827">1. Scan & Observe</text>
+      <text x="266" y="105" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• Trivy SBOM & CVEs</text>
+      <text x="266" y="125" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• OWASP ZAP DAST</text>
+      <text x="266" y="145" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• Tracee runtime eBPF</text>
+
+      <!-- Box inside Gate: Policy Decision -->
+      <rect x="406" y="60" width="138" height="115" rx="4" fill="#f8fafc" stroke="#d7dee7" />
+      <text x="475" y="78" text-anchor="middle" font-weight="bold" font-size="11" font-family="system-ui, sans-serif" fill="#111827">2. Evaluate & Decide</text>
+      <text x="416" y="105" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• KEV & EPSS enrichment</text>
+      <text x="416" y="125" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• Fail-closed gate policies</text>
+      <text x="416" y="145" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• Sign OpenVEX exceptions</text>
+
+      <!-- Flow Arrow 2 -->
+      <line x1="560" x2="610" y1="110" y2="110" stroke="#2457d6" stroke-width="2" marker-end="url(#arrow)" />
+
+      <!-- Right: Promoted Namespace -->
+      <rect x="620" y="40" width="160" height="140" rx="6" fill="url(#trusted-grad)" stroke="#34a853" stroke-width="1.5" />
+      <text x="700" y="70" text-anchor="middle" font-weight="bold" font-size="13" font-family="system-ui, sans-serif" fill="#137333">GHCR Namespace</text>
+      <text x="700" y="92" text-anchor="middle" font-size="11" font-family="system-ui, sans-serif" fill="#137333">(Assured Output)</text>
+      <text x="700" y="125" text-anchor="middle" font-family="monospace" font-size="11" fill="#14532d">n8n-trusted@sha256</text>
+      <text x="700" y="148" text-anchor="middle" font-size="10" font-family="system-ui, sans-serif" fill="#14532d">[Immutable Digest]</text>
+    </svg>
+
+    <!-- Interactive Step-by-Step Flowchart Cards -->
+    <div class="flowchart">
+      <div class="flow-step">
+        <div class="step-num">01</div>
+        <div class="step-card">
+          <h4>Intake & Resolution</h4>
+          <p>Upstream version tags (e.g. <code>latest</code>) are immediately resolved to immutable OCI digests at source intake, stopping silent tag drift and spoofing attacks.</p>
+          <span class="step-badge prevention">Preventive</span>
+        </div>
+      </div>
+      
+      <div class="flow-step">
+        <div class="step-num">02</div>
+        <div class="step-card">
+          <h4>Static Scanning</h4>
+          <p>The container layers are statically scanned with Trivy to build a complete SBOM (SPDX) and inventory all vulnerabilities, licensing liabilities, and secrets.</p>
+          <span class="step-badge prevention">Preventive</span>
+        </div>
+      </div>
+      
+      <div class="flow-step">
+        <div class="step-num">03</div>
+        <div class="step-card">
+          <h4>Dynamic Observation</h4>
+          <p>The image is executed in quarantine. Tracee collects eBPF-level runtime logs to flag malicious calls, while OWASP ZAP runs active DAST against the live container.</p>
+          <span class="step-badge detection">Detective</span>
+        </div>
+      </div>
+      
+      <div class="flow-step">
+        <div class="step-num">04</div>
+        <div class="step-card">
+          <h4>Policy Evaluation</h4>
+          <p>Vulnerabilities are enriched with CISA KEV and FIRST EPSS metrics. Decisions are automated based on strict, reviewable fail-closed rules, forcing review for high-risk targets.</p>
+          <span class="step-badge prevention">Preventive</span>
+        </div>
+      </div>
+      
+      <div class="flow-step">
+        <div class="step-num">05</div>
+        <div class="step-card">
+          <h4>Attestation & Signing</h4>
+          <p>Approved image pairs are promoted to GHCR. Cryptographic attestations (provenance, SBOM, OpenVEX) are generated and signed via GitHub OIDC identity and Cosign.</p>
+          <span class="step-badge attestation">Attestation</span>
+        </div>
+      </div>
+      
+      <div class="flow-step">
+        <div class="step-num">06</div>
+        <div class="step-card">
+          <h4>Admission & Re-Scan</h4>
+          <p>Production deploys verify attestations and deploy only digest-pinned builds. Active releases are weekly re-scanned to detect post-release security decay.</p>
+          <span class="step-badge corrective">Corrective</span>
+        </div>
+      </div>
+    </div>
   </section>
 
   <section>
