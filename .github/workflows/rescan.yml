@@ -126,9 +126,12 @@ jobs:
             --format json \
             --output "rescan-$VERSION.raw.json" \
             --severity CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN \
+            --scanners vuln,license \
             "$IMAGE" || true
           trivy image --format json --output "rescan-$VERSION.runner.json" \
-            --severity CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN "$RUNNER_IMAGE"
+            --severity CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN \
+            --scanners vuln,license \
+            "$RUNNER_IMAGE"
 
           trivy image \
             --format sarif \

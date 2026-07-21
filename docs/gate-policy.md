@@ -36,21 +36,25 @@ Our runtime observation policy enforces three key principles:
 
 ## Gate Policy
 
-For `CRITICAL` and `HIGH` findings:
+For vulnerabilities (`CVEs`) and licenses:
 
-| Finding severity | KEV | EPSS | Age | Runtime Observation | Action |
+| Finding Type / Severity | KEV | EPSS | Age | CVSS Vector / Category | Action |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `CRITICAL` / `HIGH` | Yes | Any | Any | Any | Manual review |
-| `CRITICAL` / `HIGH` | No | Above repo threshold | Any | Any | Manual review |
-| `CRITICAL` / `HIGH` | No | Below repo threshold | At least 30 days | Any | Manual review |
-| `CRITICAL` / `HIGH` | No | Unknown | Any | Any | Manual review |
-| `CRITICAL` / `HIGH` | No | Low | Unknown | Any | Manual review |
-| `CRITICAL` / `HIGH` | No | Low | Any | Observed | Manual review |
-| `CRITICAL` / `HIGH` | No | Low | Any | Unknown | Manual review |
-| `CRITICAL` / `HIGH` | No | Below threshold | Under 30 days | Not Observed (Coverage &ge; 20%) | Auto-allowed |
-| `MEDIUM` / `LOW` / `UNKNOWN` | No | Any | Any | Any | Reported, but does not directly trigger manual approval |
+| `CRITICAL` (Vulnerability) | Any | Any | Any | Any | Manual review |
+| `HIGH` (Vulnerability) | Yes | Any | Any | Any | Manual review |
+| `HIGH` (Vulnerability) | No | Above repo threshold | Any | Any | Manual review |
+| `HIGH` (Vulnerability) | No | Below repo threshold | At least 30 days | Any | Manual review |
+| `HIGH` (Vulnerability) | No | Unknown | Any | Any | Manual review |
+| `HIGH` (Vulnerability) | No | Low | Unknown | Any | Manual review |
+| `HIGH` (Vulnerability) | No | Low | Any | `AV:N/AC:L/PR:N` (Pre-Auth Network Exploit) | Manual review |
+| `HIGH` (Vulnerability) | No | Low | Any | Observed | Manual review |
+| `HIGH` (Vulnerability) | No | Low | Any | Unknown | Manual review |
+| `HIGH` (Vulnerability) | No | Below threshold | Under 30 days | Not Observed (Coverage &ge; 20%) | Auto-allowed |
+| `MEDIUM` / `LOW` / `UNKNOWN` | No | Any | Any | `AV:N/AC:L/PR:N` (Pre-Auth Network Exploit) | Manual review |
+| `MEDIUM` / `LOW` / `UNKNOWN` | No | Any | Any | Standard vector | Reported, does not block auto-promotion |
+| Prohibited License (GPL/AGPL/LGPL) | - | - | - | Strong/Restricted Copyleft | Manual review |
 
-Unknown evidence is not converted to a zero score or a negative observation claim. Critical/high findings require manual review whenever age, EPSS or required runtime evidence is unavailable or coverage is insufficient.
+Unknown evidence is not converted to a zero score or a negative observation claim. High findings require manual review whenever age, EPSS or required runtime evidence is unavailable or coverage is insufficient. All Critical findings, prohibited copyleft licenses, and high-risk Pre-Auth Network Exploit vectors (AV:N/AC:L/PR:N) are blocked and routed to manual review.
 
 ## EPSS Policy Bands
 
