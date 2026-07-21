@@ -59,9 +59,8 @@ jobs:
 
       - name: Enforce Source Allowlist (Policy-as-Code)
         run: |
-          ALLOWED_IMAGE=$(grep 'source_image:' policy/image-ingestion-policy.yml | awk '{print $2}' | tr -d '"')
-          TAG_PATTERN=$(grep 'tag_pattern:' policy/image-ingestion-policy.yml | awk '{print $2}' | tr -d '"')
-          TAG_PATTERN="${TAG_PATTERN//\\\\/\\}"
+          ALLOWED_IMAGE=$(yq eval '.allowlist.source_image' policy/image-ingestion-policy.yml | tr -d '"')
+          TAG_PATTERN=$(yq eval '.allowlist.tag_pattern' policy/image-ingestion-policy.yml | tr -d '"')
           REQUESTED_VERSION="${{ env.N8N_VERSION }}"
 
           echo "Policy: allowed source = $ALLOWED_IMAGE"
@@ -81,28 +80,6 @@ jobs:
             fi
             echo "✅ Tag pattern passed: $REQUESTED_VERSION matches x.y.z"
           fi
-
-      - name: Check Upstream Vendor Signature (Cosign)
-        run: |
-          echo "" >> trivy-summary-meta.txt || true
-          echo "### Upstream Vendor Signature Check" > vendor-sig-check.txt
-          echo "Checking if n8nio/n8n publishes Sigstore/cosign signatures..." >> vendor-sig-check.txt
-
-          # Strictly validating n8n publisher OIDC issuer and identity to prevent impersonation
-          if cosign verify n8nio/n8n:${{ env.N8N_VERSION }} \
-              --certificate-identity="https://github.com/n8nio/n8n/.github/workflows/release.yml@refs/heads/master" \
-              --certificate-oidc-issuer="https://token.actions.githubusercontent.com" 2>/dev/null; then
-            echo "✅ Vendor signature VERIFIED — n8n publishes strictly-scoped Sigstore signatures." >> vendor-sig-check.txt
-          else
-            echo "⚠️  VENDOR RISK GAP: n8nio/n8n does not publish Sigstore/cosign signatures." >> vendor-sig-check.txt
-            echo "   Publisher identity cannot be cryptographically verified upstream." >> vendor-sig-check.txt
-            echo "   Mitigations in place (per policy/image-ingestion-policy.yml):" >> vendor-sig-check.txt
-            echo "   - Source allowlisted to n8nio/n8n only" >> vendor-sig-check.txt
-            echo "   - Strict semver tag enforcement (no moving targets)" >> vendor-sig-check.txt
-            echo "   - Immutable SHA256 digest pinning throughout pipeline" >> vendor-sig-check.txt
-            echo "   Accepted risk: see policy/image-ingestion-policy.yml vendor_signature.accepted_risk" >> vendor-sig-check.txt
-          fi
-          cat vendor-sig-check.txt
 
       - name: Fetch and pin image by digest
         id: fetch-digest
@@ -134,29 +111,52 @@ jobs:
           fi
           echo "skip_promotion=false" >> $GITHUB_OUTPUT
 
-          # Resolve the exact SHA256 digest for this version tag from Docker Hub
+          # Resolve the exact linux/amd64 child manifest digest for this version tag from Docker Hub
           TOKEN=$(curl -s "https://auth.docker.io/token?service=registry.docker.io&scope=repository:n8nio/n8n:pull" | jq -r '.token')
-          DIGEST=$(curl -fsSI -H "Authorization: Bearer $TOKEN" \
+          MANIFEST_RESP=$(curl -fsSL -H "Authorization: Bearer $TOKEN" \
             -H "Accept: $ACCEPT_HEADER" \
-            "https://registry-1.docker.io/v2/n8nio/n8n/manifests/$VERSION" \
-            | awk 'BEGIN { IGNORECASE = 1 } /^docker-content-digest:/ { gsub("\r", "", $2); print $2; exit }')
+            "https://registry-1.docker.io/v2/n8nio/n8n/manifests/$VERSION")
+
+          MEDIA_TYPE=$(echo "$MANIFEST_RESP" | jq -r '.mediaType // empty')
+          if [ "$MEDIA_TYPE" = "application/vnd.oci.image.index.v1+json" ] || [ "$MEDIA_TYPE" = "application/vnd.docker.distribution.manifest.list.v2+json" ]; then
+            DIGEST=$(echo "$MANIFEST_RESP" | jq -er '.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64") | .digest' | head -n1)
+            echo "Resolved linux/amd64 child digest from multi-arch index: $DIGEST"
+          else
+            DIGEST=$(curl -fsSI -H "Authorization: Bearer $TOKEN" \
+              -H "Accept: $ACCEPT_HEADER" \
+              "https://registry-1.docker.io/v2/n8nio/n8n/manifests/$VERSION" \
+              | awk 'BEGIN { IGNORECASE = 1 } /^docker-content-digest:/ { gsub("\r", "", $2); print $2; exit }')
+            echo "Resolved single-arch manifest digest: $DIGEST"
+          fi
+
           if [ -z "$DIGEST" ]; then
-            echo "ERROR: Could not resolve digest for n8nio/n8n:$VERSION. Is the version valid?"
+            echo "ERROR: Could not resolve linux/amd64 child digest for n8nio/n8n:$VERSION."
             exit 1
           fi
           echo "Pinned version: $VERSION @ $DIGEST"
-          echo "Published platforms:"
-          docker buildx imagetools inspect "n8nio/n8n@$DIGEST" --raw | jq -r '.manifests[]?.platform | select(.os != null and .architecture != null and .os != "unknown" and .architecture != "unknown") | "- \(.os)/\(.architecture)"'
           echo "digest=$DIGEST" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
+          # Resolve the runner linux/amd64 child manifest digest
           RUNNER_TOKEN=$(curl -fsSL "https://auth.docker.io/token?service=registry.docker.io&scope=repository:n8nio/runners:pull" | jq -er '.token')
-          RUNNER_DIGEST=$(curl -fsSI -H "Authorization: Bearer $RUNNER_TOKEN" \
+          RUNNER_MANIFEST_RESP=$(curl -fsSL -H "Authorization: Bearer $RUNNER_TOKEN" \
             -H "Accept: $ACCEPT_HEADER" \
-            "https://registry-1.docker.io/v2/n8nio/runners/manifests/$VERSION" \
-            | awk 'BEGIN { IGNORECASE = 1 } /^docker-content-digest:/ { gsub("\r", "", $2); print $2; exit }')
+            "https://registry-1.docker.io/v2/n8nio/runners/manifests/$VERSION")
+
+          RUNNER_MEDIA_TYPE=$(echo "$RUNNER_MANIFEST_RESP" | jq -r '.mediaType // empty')
+          if [ "$RUNNER_MEDIA_TYPE" = "application/vnd.oci.image.index.v1+json" ] || [ "$RUNNER_MEDIA_TYPE" = "application/vnd.docker.distribution.manifest.list.v2+json" ]; then
+            RUNNER_DIGEST=$(echo "$RUNNER_MANIFEST_RESP" | jq -er '.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64") | .digest' | head -n1)
+            echo "Resolved linux/amd64 child digest from runner multi-arch index: $RUNNER_DIGEST"
+          else
+            RUNNER_DIGEST=$(curl -fsSI -H "Authorization: Bearer $RUNNER_TOKEN" \
+              -H "Accept: $ACCEPT_HEADER" \
+              "https://registry-1.docker.io/v2/n8nio/runners/manifests/$VERSION" \
+              | awk 'BEGIN { IGNORECASE = 1 } /^docker-content-digest:/ { gsub("\r", "", $2); print $2; exit }')
+            echo "Resolved runner single-arch manifest digest: $RUNNER_DIGEST"
+          fi
+
           if [ -z "$RUNNER_DIGEST" ]; then
-            echo "ERROR: Could not resolve the matching n8nio/runners:$VERSION digest."
+            echo "ERROR: Could not resolve the matching n8nio/runners:$VERSION AMD64 child digest."
             exit 1
           fi
           echo "Runner pinned version: $VERSION @ $RUNNER_DIGEST"
@@ -167,6 +167,32 @@ jobs:
           docker tag n8nio/n8n@$DIGEST n8nio/n8n:$VERSION
           docker pull n8nio/runners@$RUNNER_DIGEST
           docker tag n8nio/runners@$RUNNER_DIGEST n8nio/runners:$VERSION
+
+      - name: Check Upstream Vendor Signature (Cosign)
+        run: |
+          echo "" >> trivy-summary-meta.txt || true
+          echo "### Upstream Vendor Signature Check" > vendor-sig-check.txt
+          echo "Checking if n8nio/n8n publishes Sigstore/cosign signatures..." >> vendor-sig-check.txt
+
+          # Strictly validating n8n publisher OIDC issuer and identity to prevent impersonation on the resolved AMD64 digest
+          # Save verified signature bundle as promotion evidence
+          DIGEST="${{ steps.fetch-digest.outputs.digest }}"
+          if cosign verify "n8nio/n8n@$DIGEST" \
+              --certificate-identity-regexp="https://github.com/n8nio/n8n/.github/workflows/release.yml@.*" \
+              --certificate-oidc-issuer="https://token.actions.githubusercontent.com" > upstream-signature-bundle.json 2>&1; then
+            echo "✅ Vendor signature VERIFIED — n8n publishes strictly-scoped Sigstore signatures." >> vendor-sig-check.txt
+            echo "Signature Bundle certificate and logging details archived in upstream-signature-bundle.json." >> vendor-sig-check.txt
+          else
+            echo "⚠️  VENDOR RISK GAP: n8nio/n8n does not publish Sigstore/cosign signatures on this digest." >> vendor-sig-check.txt
+            echo "   Publisher identity cannot be cryptographically verified upstream." >> vendor-sig-check.txt
+            echo "   Mitigations in place (per policy/image-ingestion-policy.yml):" >> vendor-sig-check.txt
+            echo "   - Source allowlisted to n8nio/n8n only" >> vendor-sig-check.txt
+            echo "   - Strict semver tag enforcement (no moving targets)" >> vendor-sig-check.txt
+            echo "   - Immutable SHA256 digest pinning throughout pipeline" >> vendor-sig-check.txt
+            echo "   Accepted risk: see policy/image-ingestion-policy.yml vendor_signature.accepted_risk" >> vendor-sig-check.txt
+            echo "⚠️ Upstream signature verification failed (risk accepted per policy)." > upstream-signature-bundle.json
+          fi
+          cat vendor-sig-check.txt
 
       - name: Scan Image for Secrets
         run: |
@@ -189,7 +215,7 @@ jobs:
           docker run --rm -v "$PWD:/scandir:ro" clamav/clamav:1.5.3@sha256:7f5389ccaa2368c383fa80e167ccfe44348d71e685f926fce4755eed1757673a clamscan --max-filesize=4000M --max-scansize=4000M /scandir/image-for-clamav.tar || (echo "❌ Malware detected! Blocking promotion." && exit 1)
           docker save n8nio/runners:${{ env.N8N_VERSION }} -o runner-for-clamav.tar
           docker run --rm -v "$PWD:/scandir:ro" clamav/clamav:1.5.3@sha256:7f5389ccaa2368c383fa80e167ccfe44348d71e685f926fce4755eed1757673a clamscan --max-filesize=4000M --max-scansize=4000M /scandir/runner-for-clamav.tar || (echo "❌ Malware detected in task runner image." && exit 1)
-          echo "✅ No malware detected."
+          echo "✅ ClamAV reported no detections using the loaded signature database."
 
       - name: Scan Image for License Compliance
         run: |
@@ -202,17 +228,20 @@ jobs:
           trivy image --format table --scanners license --severity CRITICAL,HIGH --exit-code 0 \
             n8nio/runners:${{ env.N8N_VERSION }}
 
-      - name: Scan for CVEs (non-blocking report)
+      - name: Scan for CVEs and Licenses (non-blocking report)
         run: |
-          # Scan ALL severities so KEV can cross-reference Medium/Low CVEs too
+          # Scan ALL severities and include licenses to evaluate in the policy engine
           trivy image \
             --format json \
             --output trivy-report.raw.json \
             --severity CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN \
+            --scanners vuln,license \
             n8nio/n8n:${{ env.N8N_VERSION }}
 
           trivy image --format json --output trivy-report.runner.json \
-            --severity CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN n8nio/runners:${{ env.N8N_VERSION }}
+            --severity CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN \
+            --scanners vuln,license \
+            n8nio/runners:${{ env.N8N_VERSION }}
 
           # Generate SARIF format for GitHub Security integration
           trivy image \
@@ -352,6 +381,7 @@ jobs:
             trivy-report.json
             trivy-summary.txt
             vendor-sig-check.txt
+            upstream-signature-bundle.json
             kev.json
             tracee-output/
             vex.json

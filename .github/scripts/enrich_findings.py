@@ -117,8 +117,12 @@ def main():
         "kev_critical_high_count": 0,
         "epss_high_or_critical_count": 0,
         "unknown_age_critical_high_count": 0,
+        "critical_vulnerability_count": 0,
+        "network_exploit_vector_count": 0,
+        "prohibited_license_count": 0,
     }
 
+    # 1. Process Vulnerabilities
     for vuln in findings:
         cve_id = vuln.get("VulnerabilityID", "")
         severity = vuln.get("Severity", "UNKNOWN")
@@ -136,14 +140,22 @@ def main():
         if severity in CRITICAL_HIGH:
             summary["critical_high_count"] += 1
 
-            if age_days is None:
+            # Rule A: Always require manual review for Critical vulnerabilities
+            if severity == "CRITICAL":
                 gate_decision = "MANUAL_REVIEW"
-                gate_reasons.append("age_unknown")
-                summary["unknown_age_critical_high_count"] += 1
-            elif age_days >= 30:
-                gate_decision = "MANUAL_REVIEW"
-                gate_reasons.append("age_30d_or_more")
-                summary["older_than_30_days_count"] += 1
+                gate_reasons.append("critical_severity_block")
+                summary["critical_vulnerability_count"] += 1
+
+            # Rule B: Age checks (only for High severity since Critical is already always blocked)
+            if severity == "HIGH":
+                if age_days is None:
+                    gate_decision = "MANUAL_REVIEW"
+                    gate_reasons.append("age_unknown")
+                    summary["unknown_age_critical_high_count"] += 1
+                elif age_days >= 30:
+                    gate_decision = "MANUAL_REVIEW"
+                    gate_reasons.append("age_30d_or_more")
+                    summary["older_than_30_days_count"] += 1
 
             if kev_hit:
                 gate_decision = "MANUAL_REVIEW"
@@ -167,6 +179,33 @@ def main():
                 gate_decision = "MANUAL_REVIEW"
                 gate_reasons.append("runtime_observation_unknown")
 
+        # Rule C: Parse CVSS vectors for network/pre-auth/low-complexity exploits (AV:N and PR:N and AC:L)
+        cvss_data = vuln.get("CVSS", {})
+        cvss_vectors = []
+        for source in ["nvd", "redhat", "ghsa"]:
+            vec = cvss_data.get(source, {}).get("V3Vector")
+            if vec:
+                cvss_vectors.append(vec)
+
+        network_attack = False
+        pre_auth = False
+        low_complexity = False
+        for vec in cvss_vectors:
+            parts = vec.split("/")
+            for part in parts:
+                if part == "AV:N":
+                    network_attack = True
+                if part == "PR:N":
+                    pre_auth = True
+                if part == "AC:L":
+                    low_complexity = True
+
+        if network_attack and pre_auth and low_complexity:
+            gate_decision = "MANUAL_REVIEW"
+            gate_reasons.append("network_preauth_low_complexity_exploit")
+            summary["network_exploit_vector_count"] += 1
+
+        if severity in CRITICAL_HIGH or gate_decision == "MANUAL_REVIEW":
             if gate_decision == "MANUAL_REVIEW":
                 summary["manual_review_count"] += 1
             else:
@@ -179,6 +218,27 @@ def main():
         vuln["AgeDays"] = age_days
         vuln["GateDecision"] = gate_decision
         vuln["GateReasons"] = sorted(set(gate_reasons))
+
+    # 2. Process Licenses (In-place)
+    for result in report.get("Results", []):
+        for lic in result.get("Licenses") or []:
+            lic_name = lic.get("Name", lic.get("License", "UNKNOWN"))
+            severity = lic.get("Severity", "UNKNOWN")
+            category = lic.get("Category", "").lower()
+
+            # Identify restricted copyleft licenses (GPL, AGPL, LGPL)
+            is_prohibited = category in {"restricted", "reciprocal"} or any(copyleft in lic_name.upper() for copyleft in ["GPL", "AGPL", "LGPL"])
+
+            lic_decision = "AUTO_ALLOWED"
+            lic_reasons = []
+            if is_prohibited:
+                lic_decision = "MANUAL_REVIEW"
+                lic_reasons.append(f"prohibited_license_{lic_name.lower()}")
+                summary["prohibited_license_count"] += 1
+                summary["manual_review_count"] += 1
+
+            lic["GateDecision"] = lic_decision
+            lic["GateReasons"] = lic_reasons
 
     # DAST / ZAP baseline check
     zap_report_path = os.environ.get("ZAP_REPORT_FILE")

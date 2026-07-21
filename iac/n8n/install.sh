@@ -229,42 +229,84 @@ echo "🔐 Verifying Cryptographic Provenance..."
 echo "---------------------------------------------"
 
 if [ "$INSECURE_LAB_MODE" = true ]; then
-    echo "   ⚠️  INSECURE LAB MODE: provenance verification is disabled."
+    if [ "${ARTIFACTGATE_ENV:-}" != "lab" ]; then
+        echo "❌ SECURITY EXCEPTION: --insecure-lab-mode requires setting ARTIFACTGATE_ENV=lab environment variable."
+        exit 1
+    fi
+    if [ -t 0 ]; then
+        echo "⚠️ WARNING: You are initiating a security verification bypass (--insecure-lab-mode)."
+        echo "   This will skip cryptographic signature and policy verification."
+        read -p "   Type 'CONFIRM' to proceed with the bypass: " confirm_insecure
+        if [ "$confirm_insecure" != "CONFIRM" ]; then
+            echo "❌ Bypass aborted by user."
+            exit 1
+        fi
+    fi
+    echo "   ⚠️  INSECURE LAB BYPASS ACTIVE: Cryptographic provenance verification is disabled."
+    echo "      [AUDIT LOG ENTRY] Verification bypassed by request on $(date)"
 else
     HAS_VERIFIED=false
     VERIFICATION_FAILED=false
     
+    COSIGN_IDENTITY="https://github.com/${REPO_SLUG}/.github/workflows/image-promotion.yml@refs/heads/main"
+    COSIGN_ISSUER="https://token.actions.githubusercontent.com"
+
     # 1. Attempt verification with Cosign (Keyless verify)
     if command -v cosign &> /dev/null; then
-        echo "   🔍 Running Cosign verification..."
-        COSIGN_IDENTITY="https://github.com/${REPO_SLUG}/.github/workflows/image-promotion.yml@refs/heads/main"
-        COSIGN_ISSUER="https://token.actions.githubusercontent.com"
+        echo "   🔍 Running Cosign keyless verification..."
         
+        # Verify Signatures
         if cosign verify --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_IMAGE}@${GHCR_DIGEST}" >/dev/null 2>&1 && \
            cosign verify --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" >/dev/null 2>&1; then
-            echo "   ✅ Cosign signatures verified."
-            if cosign verify-attestation --type openvex --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_IMAGE}@${GHCR_DIGEST}" >/dev/null 2>&1; then
-                echo "   ✅ Cosign OpenVEX attestation verified."
+            echo "   ✅ Cosign signatures verified for both application and runner."
+            
+            # Verify OpenVEX Attestations for both images
+            if cosign verify-attestation --type openvex --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_IMAGE}@${GHCR_DIGEST}" >/dev/null 2>&1 && \
+               cosign verify-attestation --type openvex --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" >/dev/null 2>&1; then
+                echo "   ✅ Cosign OpenVEX attestations verified for both images."
                 HAS_VERIFIED=true
             else
-                echo "   ❌ Cosign OpenVEX attestation missing or invalid."
+                echo "   ❌ Cosign OpenVEX attestation missing or invalid for one or both images."
                 VERIFICATION_FAILED=true
             fi
         else
-            echo "   ❌ Cosign signature verification failed."
+            echo "   ❌ Cosign signature verification failed for one or both images."
             VERIFICATION_FAILED=true
         fi
     fi
     
-    # 2. Attempt verification with GitHub CLI
+    # 2. Attempt verification with GitHub CLI (with explicit identity/repo/predicate constraints)
     if [ "$VERIFICATION_FAILED" = false ] && command -v gh &> /dev/null && gh auth status &> /dev/null 2>&1; then
         echo "   🔍 Running GitHub CLI attestation verification..."
-        if gh attestation verify "oci://${GHCR_IMAGE}@${GHCR_DIGEST}" -o "$REPO_OWNER" >/dev/null 2>&1 && \
-           gh attestation verify "oci://${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" -o "$REPO_OWNER" >/dev/null 2>&1; then
-            echo "   ✅ GitHub OIDC build attestations verified."
-            HAS_VERIFIED=true
+        
+        # Provenance constraints
+        if gh attestation verify "oci://${GHCR_IMAGE}@${GHCR_DIGEST}" \
+             --repo "$REPO_SLUG" \
+             --cert-identity "$COSIGN_IDENTITY" \
+             --predicate-type "https://slsa.dev/provenance/v1" >/dev/null 2>&1 && \
+           gh attestation verify "oci://${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" \
+             --repo "$REPO_SLUG" \
+             --cert-identity "$COSIGN_IDENTITY" \
+             --predicate-type "https://slsa.dev/provenance/v1" >/dev/null 2>&1; then
+            echo "   ✅ GitHub SLSA build provenance verified."
+            
+            # SBOM constraints
+            if gh attestation verify "oci://${GHCR_IMAGE}@${GHCR_DIGEST}" \
+                 --repo "$REPO_SLUG" \
+                 --cert-identity "$COSIGN_IDENTITY" \
+                 --predicate-type "https://spdx.dev/Document" >/dev/null 2>&1 && \
+               gh attestation verify "oci://${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" \
+                 --repo "$REPO_SLUG" \
+                 --cert-identity "$COSIGN_IDENTITY" \
+                 --predicate-type "https://spdx.dev/Document" >/dev/null 2>&1; then
+                echo "   ✅ GitHub SBOM attestations verified."
+                HAS_VERIFIED=true
+            else
+                echo "   ❌ GitHub SBOM attestation missing or invalid."
+                VERIFICATION_FAILED=true
+            fi
         else
-            echo "   ❌ GitHub OIDC build attestation verification failed."
+            echo "   ❌ GitHub SLSA build provenance verification failed."
             VERIFICATION_FAILED=true
         fi
     fi
@@ -366,19 +408,37 @@ tag_local_release_image "$DEPLOY_IMAGE_REF" "$N8N_VERSION"
 echo "---------------------------------------------"
 echo "⏳ Waiting for n8n to start..."
 STARTED=false
+POST_DEPLOY_CHECK=false
 for _ in $(seq 1 18); do
     if docker ps --filter label=com.docker.compose.service=n8n --filter status=running --format '{{.Names}}' | grep -q . \
         && docker ps --filter label=com.docker.compose.service=task-runners --filter status=running --format '{{.Names}}' | grep -q .; then
         STATUS_CODE=$(curl -s -o /dev/null -w '%{http_code}' "http://${FINAL_IP}:${N8N_HOST_PORT}/healthz" || true)
-        if [ "$STATUS_CODE" = "200" ] || [ "$STATUS_CODE" = "401" ] || [ "$STATUS_CODE" = "403" ]; then
+        STATUS_BODY=$(curl -s "http://${FINAL_IP}:${N8N_HOST_PORT}/healthz" || true)
+        if [ "$STATUS_CODE" = "200" ] && echo "$STATUS_BODY" | grep -q '"status":"ok"'; then
             STARTED=true
+            
+            # Post-deployment image digest verification
+            RUNNING_CONTAINER_ID=$(docker compose ps -q n8n 2>/dev/null || true)
+            if [ -n "$RUNNING_CONTAINER_ID" ]; then
+                RUNNING_IMAGE_ID=$(docker inspect --format='{{.Image}}' "$RUNNING_CONTAINER_ID" 2>/dev/null || true)
+                if [ -n "$RUNNING_IMAGE_ID" ]; then
+                    REPO_DIGESTS=$(docker image inspect "$RUNNING_IMAGE_ID" --format='{{.RepoDigests}}' 2>/dev/null || true)
+                    if echo "$REPO_DIGESTS" | grep -q "$GHCR_DIGEST"; then
+                        echo "   ✅ Post-deployment digest validation passed: running image digest matches $GHCR_DIGEST."
+                        POST_DEPLOY_CHECK=true
+                    else
+                        echo "   ❌ Post-deployment digest validation FAILED: running image digest does not match the promoted target digest."
+                        POST_DEPLOY_CHECK=false
+                    fi
+                fi
+            fi
             break
         fi
     fi
     sleep 5
 done
 
-if [ "$STARTED" = true ]; then
+if [ "$STARTED" = true ] && [ "$POST_DEPLOY_CHECK" = true ]; then
     echo ""
     echo "🎉 SUCCESS! n8n ${N8N_VERSION} deployed."
     echo "============================================="
@@ -390,8 +450,9 @@ if [ "$STARTED" = true ]; then
         echo "To rollback:  $SED_CMD 's|^N8N_IMAGE_IDENTIFIER=.*|N8N_IMAGE_IDENTIFIER=$PREV_IDENTIFIER|' $ENV_FILE && docker compose up -d"
     fi
 else
-    echo "⚠️  The container may not have started correctly."
-    echo "Run 'docker compose logs' to diagnose."
+    echo "❌ Deployment verification FAILED. n8n did not start successfully, or digest validation failed."
+    echo "   Run 'docker compose logs' to diagnose."
+    exit 1
 fi
 
 # ─── AUTO-UPGRADE ────────────────────────────────────────────────────────────
