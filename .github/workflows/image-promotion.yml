@@ -40,7 +40,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
-      - name: Install Trivy and cosign
+      - name: Install Trivy, cosign, and yq
         run: |
           sudo apt-get update
           sudo apt-get install -y wget apt-transport-https gnupg lsb-release jq
@@ -56,6 +56,11 @@ jobs:
             "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign_checksums.txt"
           grep 'cosign-linux-amd64$' cosign_checksums.txt | sha256sum --check -
           sudo install -m 755 cosign-linux-amd64 /usr/local/bin/cosign
+          # Install yq for YAML policy parsing
+          YQ_VERSION=v4.44.1
+          curl --fail --show-error --location --retry 3 -o yq_linux_amd64 \
+            "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64"
+          sudo install -m 755 yq_linux_amd64 /usr/local/bin/yq
 
       - name: Enforce Source Allowlist (Policy-as-Code)
         run: |
@@ -174,23 +179,33 @@ jobs:
           echo "### Upstream Vendor Signature Check" > vendor-sig-check.txt
           echo "Checking if n8nio/n8n publishes Sigstore/cosign signatures..." >> vendor-sig-check.txt
 
-          # Strictly validating n8n publisher OIDC issuer and identity to prevent impersonation on the resolved AMD64 digest
-          # Save verified signature bundle as promotion evidence
+          EXPIRY_DATE=$(yq eval '.vendor_signature.accepted_risk_expires_on' policy/image-ingestion-policy.yml | tr -d '"')
+          CURRENT_DATE=$(date -u +%Y-%m-%d)
+          if [ -n "$EXPIRY_DATE" ] && [ "$EXPIRY_DATE" != "null" ]; then
+            if [ "$CURRENT_DATE" \> "$EXPIRY_DATE" ]; then
+              echo "❌ VENDOR RISK EXPIRED: Accepted risk period ($EXPIRY_DATE) has elapsed on $CURRENT_DATE."
+              echo "   Upstream vendor signature is required. Halting promotion."
+              exit 1
+            fi
+          fi
+
           DIGEST="${{ steps.fetch-digest.outputs.digest }}"
-          if cosign verify "n8nio/n8n@$DIGEST" \
-              --certificate-identity-regexp="https://github.com/n8nio/n8n/.github/workflows/release.yml@.*" \
-              --certificate-oidc-issuer="https://token.actions.githubusercontent.com" > upstream-signature-bundle.json 2>&1; then
+          COSIGN_OUT=$(cosign verify "n8nio/n8n@$DIGEST" \
+              --certificate-identity-regexp="https://github.com/n8nio/n8n/.github/workflows/release.yml@refs/(heads/master|tags/v.*)" \
+              --certificate-oidc-issuer="https://token.actions.githubusercontent.com" 2>&1 || true)
+
+          if echo "$COSIGN_OUT" | grep -q "Verification for"; then
             echo "✅ Vendor signature VERIFIED — n8n publishes strictly-scoped Sigstore signatures." >> vendor-sig-check.txt
-            echo "Signature Bundle certificate and logging details archived in upstream-signature-bundle.json." >> vendor-sig-check.txt
-          else
+            echo "$COSIGN_OUT" > upstream-signature-bundle.json
+          elif echo "$COSIGN_OUT" | grep -iqE "no matching signatures|no signatures found"; then
             echo "⚠️  VENDOR RISK GAP: n8nio/n8n does not publish Sigstore/cosign signatures on this digest." >> vendor-sig-check.txt
             echo "   Publisher identity cannot be cryptographically verified upstream." >> vendor-sig-check.txt
-            echo "   Mitigations in place (per policy/image-ingestion-policy.yml):" >> vendor-sig-check.txt
-            echo "   - Source allowlisted to n8nio/n8n only" >> vendor-sig-check.txt
-            echo "   - Strict semver tag enforcement (no moving targets)" >> vendor-sig-check.txt
-            echo "   - Immutable SHA256 digest pinning throughout pipeline" >> vendor-sig-check.txt
-            echo "   Accepted risk: see policy/image-ingestion-policy.yml vendor_signature.accepted_risk" >> vendor-sig-check.txt
-            echo "⚠️ Upstream signature verification failed (risk accepted per policy)." > upstream-signature-bundle.json
+            echo "   Accepted risk expiry: $EXPIRY_DATE (Valid)" >> vendor-sig-check.txt
+            echo "⚠️ Upstream signature verification skipped (no signature published; risk accepted per policy)." > upstream-signature-bundle.json
+          else
+            echo "❌ CRITICAL SECURITY ERROR: Upstream signature verification FAILED due to invalid signature or identity mismatch!"
+            echo "$COSIGN_OUT"
+            exit 1
           fi
           cat vendor-sig-check.txt
 

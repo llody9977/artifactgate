@@ -25,6 +25,7 @@ allowlist:
 #   skip      — No check performed (not recommended)
 vendor_signature:
   mode: "warn"
+  accepted_risk_expires_on: "2026-09-30"
 
   # Document the accepted risk when mode is 'warn'.
   # This is visible in every scan report artifact for audit purposes.

@@ -62,7 +62,7 @@ The promotion pipeline handles images in a strict, zero-trust workflow:
 
 ### Detailed Workflow Steps:
 
-1. **Intake & Digest Pinning**: Downstream references are resolved to immutable OCI SHA256 digests at intake. This guarantees that the exact code evaluated during building matches the code running in production.
+1. **Intake & Digest Pinning**: Downstream references are resolved to immutable OCI SHA256 digests for the `linux/amd64` architecture at intake. ArtifactGate currently admits only Linux AMD64 workload images to guarantee byte-level parity between scanned and deployed objects. This guarantees that the exact code evaluated during building matches the code running in production.
 2. **Static Vulnerability & Threat Scan**: Trivy extracts a complete SPDX SBOM and scans container layers for secrets, licensing liabilities, and vulnerability CVE records.
 3. **Dynamic Observation**: The container is executed in a quarantine test harness. **Tracee** uses kernel-level eBPF tracing to audit loaded shared libraries and system calls. **OWASP ZAP** performs a DAST baseline scan to identify web interface exposures.
 4. **Policy Decision Engine**: Scans are enriched with real-time risk metrics (CISA KEV catalog active exploitation status and FIRST EPSS exploit probability). If the image violates rules in `vulnerability-gate-policy.yml` (e.g. active KEV exploits or high-risk unknown items), it fails closed. High-risk items require documented, expiring OpenVEX waivers approved in the GitHub Actions environment.
