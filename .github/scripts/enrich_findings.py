@@ -217,23 +217,25 @@ def main():
         vuln["GateDecision"] = gate_decision
         vuln["GateReasons"] = sorted(set(gate_reasons))
 
-    # 2. Process Licenses (In-place with policy classification)
-    # Load policy/license-policy.yml if available
-    deny_licenses = {"AGPL-1.0-only", "AGPL-1.0-or-later", "AGPL-3.0-only", "AGPL-3.0-or-later", "SSPL-1.0"}
-    review_licenses = {"GPL-1.0-only", "GPL-1.0-or-later", "GPL-2.0-only", "GPL-2.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later", "LGPL-2.0-only", "LGPL-2.0-or-later", "LGPL-2.1-only", "LGPL-2.1-or-later", "LGPL-3.0-only", "LGPL-3.0-or-later", "MPL-1.1", "MPL-2.0", "EPL-1.0", "EPL-2.0"}
-
+    # 2. Process Licenses (Strict policy-driven evaluation — Fail Closed)
     license_policy_path = "policy/license-policy.yml"
-    if os.path.exists(license_policy_path):
-        try:
-            with open(license_policy_path) as f:
-                import yaml
-                lic_pol = yaml.safe_load(f) or {}
-                if lic_pol.get("deny"):
-                    deny_licenses = set(lic_pol.get("deny"))
-                if lic_pol.get("manual_review"):
-                    review_licenses = set(lic_pol.get("manual_review"))
-        except Exception as exc:
-            print(f"Warning: Could not parse {license_policy_path}, using built-in defaults: {exc}", file=sys.stderr)
+    if not os.path.exists(license_policy_path):
+        print(f"❌ POLICY ERROR: Licence policy file '{license_policy_path}' is required but missing.", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        with open(license_policy_path, encoding="utf-8") as f:
+            import yaml
+            lic_pol = yaml.safe_load(f)
+            if not isinstance(lic_pol, dict):
+                raise ValueError("Licence policy document root must be a YAML dictionary mapping.")
+            deny_licenses = set(lic_pol.get("deny") or [])
+            review_licenses = set(lic_pol.get("manual_review") or [])
+            if not isinstance(lic_pol.get("deny"), list) or not isinstance(lic_pol.get("manual_review"), list):
+                raise ValueError("'deny' and 'manual_review' keys must be valid YAML lists of SPDX identifiers.")
+    except Exception as exc:
+        print(f"❌ POLICY ERROR: Failed to parse licence policy file '{license_policy_path}': {exc}", file=sys.stderr)
+        sys.exit(1)
 
     for result in report.get("Results", []):
         for lic in result.get("Licenses") or []:

@@ -56,10 +56,14 @@ jobs:
             "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign_checksums.txt"
           grep 'cosign-linux-amd64$' cosign_checksums.txt | sha256sum --check -
           sudo install -m 755 cosign-linux-amd64 /usr/local/bin/cosign
-          # Install yq for YAML policy parsing
+          # Install yq for YAML policy parsing (checksum verified)
           YQ_VERSION=v4.44.1
           curl --fail --show-error --location --retry 3 -o yq_linux_amd64 \
             "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64"
+          curl --fail --show-error --location --retry 3 -o yq_checksums.txt \
+            "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/checksums"
+          YQ_SHA=$(grep '^yq_linux_amd64 ' yq_checksums.txt | awk '{print $19}')
+          echo "$YQ_SHA  yq_linux_amd64" | sha256sum --check -
           sudo install -m 755 yq_linux_amd64 /usr/local/bin/yq
 
       - name: Enforce Source Allowlist (Policy-as-Code)
@@ -230,7 +234,7 @@ jobs:
           docker run --rm -v "$PWD:/scandir:ro" clamav/clamav:1.5.3@sha256:7f5389ccaa2368c383fa80e167ccfe44348d71e685f926fce4755eed1757673a clamscan --max-filesize=4000M --max-scansize=4000M /scandir/image-for-clamav.tar || (echo "❌ Malware detected! Blocking promotion." && exit 1)
           docker save n8nio/runners:${{ env.N8N_VERSION }} -o runner-for-clamav.tar
           docker run --rm -v "$PWD:/scandir:ro" clamav/clamav:1.5.3@sha256:7f5389ccaa2368c383fa80e167ccfe44348d71e685f926fce4755eed1757673a clamscan --max-filesize=4000M --max-scansize=4000M /scandir/runner-for-clamav.tar || (echo "❌ Malware detected in task runner image." && exit 1)
-          echo "✅ ClamAV reported no detections using the loaded signature database."
+          echo "✅ ClamAV reported no detections using the recorded engine (v1.5.3) and signature database versions."
 
       - name: Scan Image for License Compliance
         run: |
@@ -555,6 +559,11 @@ jobs:
             ghcr.io/${{ github.repository }}/n8n-runners-trusted@${{ steps.docker_push.outputs.runner_digest }}
           echo "SBOM generated: $(jq '.packages | length' sbom.spdx.json) packages"
 
+      - name: Validate SBOM Quality Gate
+        run: |
+          python3 .github/scripts/validate_sbom.py sbom.spdx.json 10
+          python3 .github/scripts/validate_sbom.py runner-sbom.spdx.json 10
+
       - name: Attest SBOM
         uses: actions/attest@59d89426e2e5050f249591410113c4c114ea0f3a # v1.4.0 (consolidated)
         with:
@@ -586,11 +595,21 @@ jobs:
           cosign attest --yes --type openvex --predicate ./vex.json "ghcr.io/${{ github.repository }}/n8n-trusted@${{ steps.docker_push.outputs.digest }}"
           cosign attest --yes --type openvex --predicate ./vex.json "ghcr.io/${{ github.repository }}/n8n-runners-trusted@${{ steps.docker_push.outputs.runner_digest }}"
 
+      - name: Generate and Attest Promotion Decision (Keyless)
+        run: |
+          python3 .github/scripts/generate_promotion_decision.py \
+            --decision PASS \
+            --app-digest "${{ steps.docker_push.outputs.digest }}" \
+            --runner-digest "${{ steps.docker_push.outputs.runner_digest }}" \
+            --output promotion-decision.json
+          cosign attest --yes --type promotiondecision --predicate ./promotion-decision.json "ghcr.io/${{ github.repository }}/n8n-trusted@${{ steps.docker_push.outputs.digest }}"
+          cosign attest --yes --type promotiondecision --predicate ./promotion-decision.json "ghcr.io/${{ github.repository }}/n8n-runners-trusted@${{ steps.docker_push.outputs.runner_digest }}"
+
       - name: Add Attestations Summary
         run: |
           echo "### 🛡️ Security Attestations" >> $GITHUB_STEP_SUMMARY
           echo "✅ **SLSA Build Provenance** and **SBOM** have been securely attested to the image digest \`${{ steps.docker_push.outputs.digest }}\`." >> $GITHUB_STEP_SUMMARY
-          echo "✅ **Cosign signatures** and **OpenVEX exception documents** have also been attested keylessly." >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Cosign signatures**, **OpenVEX documents**, and **Promotion Decision attestations** have also been attested keylessly." >> $GITHUB_STEP_SUMMARY
 
       - name: Create GitHub Release with rollback info
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v2
@@ -600,6 +619,7 @@ jobs:
             ./runner-sbom.spdx.json
             ./trivy-report.json
             ./vex.json
+            ./promotion-decision.json
           tag_name: n8n-${{ needs.scan-images.outputs.resolved_version }}
           name: "n8n ${{ needs.scan-images.outputs.resolved_version }} (Trusted)"
           body: |
@@ -759,6 +779,11 @@ jobs:
             ghcr.io/${{ github.repository }}/n8n-runners-trusted@${{ steps.docker_push.outputs.runner_digest }}
           echo "SBOM generated: $(jq '.packages | length' sbom.spdx.json) packages"
 
+      - name: Validate SBOM Quality Gate
+        run: |
+          python3 .github/scripts/validate_sbom.py sbom.spdx.json 10
+          python3 .github/scripts/validate_sbom.py runner-sbom.spdx.json 10
+
       - name: Attest SBOM
         uses: actions/attest@59d89426e2e5050f249591410113c4c114ea0f3a # v1.4.0 (consolidated)
         with:
@@ -790,11 +815,22 @@ jobs:
           cosign attest --yes --type openvex --predicate ./vex.json "ghcr.io/${{ github.repository }}/n8n-trusted@${{ steps.docker_push.outputs.digest }}"
           cosign attest --yes --type openvex --predicate ./vex.json "ghcr.io/${{ github.repository }}/n8n-runners-trusted@${{ steps.docker_push.outputs.runner_digest }}"
 
+      - name: Generate and Attest Promotion Decision (Keyless)
+        run: |
+          python3 .github/scripts/generate_promotion_decision.py \
+            --decision WAIVER \
+            --app-digest "${{ steps.docker_push.outputs.digest }}" \
+            --runner-digest "${{ steps.docker_push.outputs.runner_digest }}" \
+            --waiver-file ./waiver.json \
+            --output promotion-decision.json
+          cosign attest --yes --type promotiondecision --predicate ./promotion-decision.json "ghcr.io/${{ github.repository }}/n8n-trusted@${{ steps.docker_push.outputs.digest }}"
+          cosign attest --yes --type promotiondecision --predicate ./promotion-decision.json "ghcr.io/${{ github.repository }}/n8n-runners-trusted@${{ steps.docker_push.outputs.runner_digest }}"
+
       - name: Add Attestations Summary
         run: |
           echo "### 🛡️ Security Attestations" >> $GITHUB_STEP_SUMMARY
           echo "✅ **SLSA Build Provenance** and **SBOM** have been securely attested to the image digest \`${{ steps.docker_push.outputs.digest }}\`." >> $GITHUB_STEP_SUMMARY
-          echo "✅ **Cosign signatures** and **OpenVEX exception documents** have also been attested keylessly." >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Cosign signatures**, **OpenVEX documents**, and **Promotion Decision attestations** have also been attested keylessly." >> $GITHUB_STEP_SUMMARY
 
       - name: Create GitHub Release with rollback info
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v2
@@ -805,6 +841,7 @@ jobs:
             ./trivy-report.json
             ./vex.json
             ./waiver.json
+            ./promotion-decision.json
           tag_name: n8n-${{ needs.scan-images.outputs.resolved_version }}
           name: "n8n ${{ needs.scan-images.outputs.resolved_version }} (Manually Approved — Vulnerabilities Present)"
           body: |

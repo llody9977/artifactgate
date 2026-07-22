@@ -262,11 +262,13 @@ else
     RUNNER_PROV_VERIFIED=false
     APP_SBOM_VERIFIED=false
     RUNNER_SBOM_VERIFIED=false
+    APP_DECISION_VERIFIED=false
+    RUNNER_DECISION_VERIFIED=false
     
     COSIGN_IDENTITY="https://github.com/${REPO_SLUG}/.github/workflows/image-promotion.yml@refs/heads/main"
     COSIGN_ISSUER="https://token.actions.githubusercontent.com"
 
-    # 1. Attempt verification with Cosign (Keyless verify for signatures, OpenVEX, Provenance, SBOM)
+    # 1. Attempt verification with Cosign (Keyless verify for signatures, OpenVEX, Provenance, SBOM, Promotion Decision)
     if command -v cosign &> /dev/null; then
         echo "   🔍 Running Cosign keyless verification..."
         
@@ -289,6 +291,32 @@ else
         (cosign verify-attestation --type spdxjson --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" >/dev/null 2>&1 || \
          cosign verify-attestation --type spdx --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" >/dev/null 2>&1 || \
          cosign verify-attestation --type https://spdx.dev/Document --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" >/dev/null 2>&1) && RUNNER_SBOM_VERIFIED=true
+
+        # Verify Promotion Decision Attestation for App
+        APP_DEC_JSON=$(cosign verify-attestation --type promotiondecision --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_IMAGE}@${GHCR_DIGEST}" 2>/dev/null || true)
+        if echo "$APP_DEC_JSON" | grep -q '"decision":'; then
+            DEC_VAL=$(echo "$APP_DEC_JSON" | jq -r '.payload' | base64 -d 2>/dev/null | jq -r '.predicate.decision // empty')
+            PLAT_VAL=$(echo "$APP_DEC_JSON" | jq -r '.payload' | base64 -d 2>/dev/null | jq -r '.predicate.platform // empty')
+            REPO_VAL=$(echo "$APP_DEC_JSON" | jq -r '.payload' | base64 -d 2>/dev/null | jq -r '.predicate.workflow.repository // empty')
+            if [ "$DEC_VAL" = "PASS" ] || [ "$DEC_VAL" = "WAIVER" ]; then
+                if [ "$PLAT_VAL" = "linux/amd64" ] && [ "$REPO_VAL" = "$REPO_SLUG" ]; then
+                    APP_DECISION_VERIFIED=true
+                fi
+            fi
+        fi
+
+        # Verify Promotion Decision Attestation for Runner
+        RUNNER_DEC_JSON=$(cosign verify-attestation --type promotiondecision --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" 2>/dev/null || true)
+        if echo "$RUNNER_DEC_JSON" | grep -q '"decision":'; then
+            DEC_VAL=$(echo "$RUNNER_DEC_JSON" | jq -r '.payload' | base64 -d 2>/dev/null | jq -r '.predicate.decision // empty')
+            PLAT_VAL=$(echo "$RUNNER_DEC_JSON" | jq -r '.payload' | base64 -d 2>/dev/null | jq -r '.predicate.platform // empty')
+            REPO_VAL=$(echo "$RUNNER_DEC_JSON" | jq -r '.payload' | base64 -d 2>/dev/null | jq -r '.predicate.workflow.repository // empty')
+            if [ "$DEC_VAL" = "PASS" ] || [ "$DEC_VAL" = "WAIVER" ]; then
+                if [ "$PLAT_VAL" = "linux/amd64" ] && [ "$REPO_VAL" = "$REPO_SLUG" ]; then
+                    RUNNER_DECISION_VERIFIED=true
+                fi
+            fi
+        fi
     fi
     
     # 2. Attempt verification with GitHub CLI for any remaining unverified provenance or SBOM items
@@ -301,26 +329,29 @@ else
         [ "$RUNNER_SBOM_VERIFIED" = true ] || gh attestation verify "oci://${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" --repo "$REPO_SLUG" --cert-identity "$COSIGN_IDENTITY" --predicate-type "https://spdx.dev/Document" >/dev/null 2>&1 && RUNNER_SBOM_VERIFIED=true
     fi
     
-    # 3. Decision — ALL 8 booleans must be true
-    echo "   📊 Evidence Matrix Status:"
-    echo "      - App Signature:              $([ "$APP_SIG_VERIFIED" = true ] && echo '✅ VERIFIED' || echo '❌ MISSING/FAILED')"
-    echo "      - Runner Signature:           $([ "$RUNNER_SIG_VERIFIED" = true ] && echo '✅ VERIFIED' || echo '❌ MISSING/FAILED')"
-    echo "      - App OpenVEX Waiver:         $([ "$APP_VEX_VERIFIED" = true ] && echo '✅ VERIFIED' || echo '❌ MISSING/FAILED')"
-    echo "      - Runner OpenVEX Waiver:      $([ "$RUNNER_VEX_VERIFIED" = true ] && echo '✅ VERIFIED' || echo '❌ MISSING/FAILED')"
-    echo "      - App SLSA Build Provenance:  $([ "$APP_PROV_VERIFIED" = true ] && echo '✅ VERIFIED' || echo '❌ MISSING/FAILED')"
-    echo "      - Runner SLSA Build Provenance: $([ "$RUNNER_PROV_VERIFIED" = true ] && echo '✅ VERIFIED' || echo '❌ MISSING/FAILED')"
-    echo "      - App SPDX SBOM:              $([ "$APP_SBOM_VERIFIED" = true ] && echo '✅ VERIFIED' || echo '❌ MISSING/FAILED')"
-    echo "      - Runner SPDX SBOM:           $([ "$RUNNER_SBOM_VERIFIED" = true ] && echo '✅ VERIFIED' || echo '❌ MISSING/FAILED')"
+    # 3. Decision — ALL required booleans must be true
+    echo "   📊 Cryptographic Evidence Matrix Status:"
+    echo "      - App Signature:                   $([ "$APP_SIG_VERIFIED" = true ] && echo '✅ VERIFIED' || echo '❌ MISSING/FAILED')"
+    echo "      - Runner Signature:                $([ "$RUNNER_SIG_VERIFIED" = true ] && echo '✅ VERIFIED' || echo '❌ MISSING/FAILED')"
+    echo "      - App OpenVEX Attestation:         $([ "$APP_VEX_VERIFIED" = true ] && echo '✅ VERIFIED' || echo '❌ MISSING/FAILED')"
+    echo "      - Runner OpenVEX Attestation:      $([ "$RUNNER_VEX_VERIFIED" = true ] && echo '✅ VERIFIED' || echo '❌ MISSING/FAILED')"
+    echo "      - App SLSA Build Provenance:       $([ "$APP_PROV_VERIFIED" = true ] && echo '✅ VERIFIED' || echo '❌ MISSING/FAILED')"
+    echo "      - Runner SLSA Build Provenance:    $([ "$RUNNER_PROV_VERIFIED" = true ] && echo '✅ VERIFIED' || echo '❌ MISSING/FAILED')"
+    echo "      - App SPDX SBOM:                   $([ "$APP_SBOM_VERIFIED" = true ] && echo '✅ VERIFIED' || echo '❌ MISSING/FAILED')"
+    echo "      - Runner SPDX SBOM:                $([ "$RUNNER_SBOM_VERIFIED" = true ] && echo '✅ VERIFIED' || echo '❌ MISSING/FAILED')"
+    echo "      - App Promotion Decision Predicate: $([ "$APP_DECISION_VERIFIED" = true ] && echo '✅ VERIFIED' || echo '❌ MISSING/FAILED')"
+    echo "      - Runner Promotion Decision Predicate: $([ "$RUNNER_DECISION_VERIFIED" = true ] && echo '✅ VERIFIED' || echo '❌ MISSING/FAILED')"
 
     if [ "$APP_SIG_VERIFIED" = true ] && [ "$RUNNER_SIG_VERIFIED" = true ] && \
        [ "$APP_VEX_VERIFIED" = true ] && [ "$RUNNER_VEX_VERIFIED" = true ] && \
        [ "$APP_PROV_VERIFIED" = true ] && [ "$RUNNER_PROV_VERIFIED" = true ] && \
-       [ "$APP_SBOM_VERIFIED" = true ] && [ "$RUNNER_SBOM_VERIFIED" = true ]; then
-        echo "✅ Full evidence matrix verified. Cryptographic trust verification passed."
+       [ "$APP_SBOM_VERIFIED" = true ] && [ "$RUNNER_SBOM_VERIFIED" = true ] && \
+       [ "$APP_DECISION_VERIFIED" = true ] && [ "$RUNNER_DECISION_VERIFIED" = true ]; then
+        echo "✅ Full evidence matrix verified (Signatures, OpenVEX, SLSA Provenance, SPDX SBOM, Promotion Decision for both images). Cryptographic trust verification passed."
     else
         echo ""
         echo "❌ SECURITY ALERT: Cryptographic evidence matrix INCOMPLETE or INVALID."
-        echo "   All 8 required evidence items (Signatures, OpenVEX, SLSA Provenance, SPDX SBOM for both images) must pass."
+        echo "   All required evidence items (Signatures, OpenVEX, SLSA Provenance, SPDX SBOM, Promotion Decision for both images) must pass."
         echo "   Deployment aborted."
         exit 1
     fi
