@@ -572,8 +572,8 @@ jobs:
 
       - name: Validate SBOM Quality Gate
         run: |
-          python3 .github/scripts/validate_sbom.py sbom.spdx.json 10
-          python3 .github/scripts/validate_sbom.py runner-sbom.spdx.json 10
+          python3 .github/scripts/validate_sbom.py sbom.spdx.json 10 "${{ steps.docker_push.outputs.digest }}"
+          python3 .github/scripts/validate_sbom.py runner-sbom.spdx.json 10 "${{ steps.docker_push.outputs.runner_digest }}"
 
       - name: Attest SBOM
         uses: actions/attest@59d89426e2e5050f249591410113c4c114ea0f3a # v1.4.0 (consolidated)
@@ -608,10 +608,13 @@ jobs:
 
       - name: Generate and Attest Promotion Decision (Keyless)
         run: |
+          python3 -c "import json, subprocess, sys; tv = {'trivy': subprocess.getoutput('trivy --version | head -1'), 'cosign': subprocess.getoutput('cosign version | head -1'), 'yq': subprocess.getoutput('yq --version'), 'clamav': '1.5.3@sha256:7f5389ccaa2368c383fa80e167ccfe44348d71e685f926fce4755eed1757673a', 'tracee': 'v0.22.0', 'zap': '2.15.0', 'python': sys.version.split()[0]}; json.dump(tv, open('tool-versions.json', 'w'))"
           python3 .github/scripts/generate_promotion_decision.py \
             --decision PASS \
-            --app-digest "${{ steps.docker_push.outputs.digest }}" \
-            --runner-digest "${{ steps.docker_push.outputs.runner_digest }}" \
+            --app-source-digest "${{ needs.scan-images.outputs.image_digest }}" \
+            --app-promoted-digest "${{ steps.docker_push.outputs.digest }}" \
+            --runner-source-digest "${{ needs.scan-images.outputs.runner_digest }}" \
+            --runner-promoted-digest "${{ steps.docker_push.outputs.runner_digest }}" \
             --output promotion-decision.json
           cosign attest --yes --type promotiondecision --predicate ./promotion-decision.json "ghcr.io/${{ github.repository }}/n8n-trusted@${{ steps.docker_push.outputs.digest }}"
           cosign attest --yes --type promotiondecision --predicate ./promotion-decision.json "ghcr.io/${{ github.repository }}/n8n-runners-trusted@${{ steps.docker_push.outputs.runner_digest }}"
@@ -792,8 +795,8 @@ jobs:
 
       - name: Validate SBOM Quality Gate
         run: |
-          python3 .github/scripts/validate_sbom.py sbom.spdx.json 10
-          python3 .github/scripts/validate_sbom.py runner-sbom.spdx.json 10
+          python3 .github/scripts/validate_sbom.py sbom.spdx.json 10 "${{ steps.docker_push.outputs.digest }}"
+          python3 .github/scripts/validate_sbom.py runner-sbom.spdx.json 10 "${{ steps.docker_push.outputs.runner_digest }}"
 
       - name: Attest SBOM
         uses: actions/attest@59d89426e2e5050f249591410113c4c114ea0f3a # v1.4.0 (consolidated)
@@ -828,10 +831,13 @@ jobs:
 
       - name: Generate and Attest Promotion Decision (Keyless)
         run: |
+          python3 -c "import json, subprocess, sys; tv = {'trivy': subprocess.getoutput('trivy --version | head -1'), 'cosign': subprocess.getoutput('cosign version | head -1'), 'yq': subprocess.getoutput('yq --version'), 'clamav': '1.5.3@sha256:7f5389ccaa2368c383fa80e167ccfe44348d71e685f926fce4755eed1757673a', 'tracee': 'v0.22.0', 'zap': '2.15.0', 'python': sys.version.split()[0]}; json.dump(tv, open('tool-versions.json', 'w'))"
           python3 .github/scripts/generate_promotion_decision.py \
             --decision WAIVER \
-            --app-digest "${{ steps.docker_push.outputs.digest }}" \
-            --runner-digest "${{ steps.docker_push.outputs.runner_digest }}" \
+            --app-source-digest "${{ needs.scan-images.outputs.image_digest }}" \
+            --app-promoted-digest "${{ steps.docker_push.outputs.digest }}" \
+            --runner-source-digest "${{ needs.scan-images.outputs.runner_digest }}" \
+            --runner-promoted-digest "${{ steps.docker_push.outputs.runner_digest }}" \
             --waiver-file ./waiver.json \
             --output promotion-decision.json
           cosign attest --yes --type promotiondecision --predicate ./promotion-decision.json "ghcr.io/${{ github.repository }}/n8n-trusted@${{ steps.docker_push.outputs.digest }}"

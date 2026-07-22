@@ -292,29 +292,37 @@ else
          cosign verify-attestation --type spdx --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" >/dev/null 2>&1 || \
          cosign verify-attestation --type https://spdx.dev/Document --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" >/dev/null 2>&1) && RUNNER_SBOM_VERIFIED=true
 
-        # Verify Promotion Decision Attestation for App
-        APP_DEC_JSON=$(cosign verify-attestation --type promotiondecision --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_IMAGE}@${GHCR_DIGEST}" 2>/dev/null || true)
-        if echo "$APP_DEC_JSON" | grep -q '"decision":'; then
-            DEC_VAL=$(echo "$APP_DEC_JSON" | jq -r '.payload' | base64 -d 2>/dev/null | jq -r '.predicate.decision // empty')
-            PLAT_VAL=$(echo "$APP_DEC_JSON" | jq -r '.payload' | base64 -d 2>/dev/null | jq -r '.predicate.platform // empty')
-            REPO_VAL=$(echo "$APP_DEC_JSON" | jq -r '.payload' | base64 -d 2>/dev/null | jq -r '.predicate.workflow.repository // empty')
-            if [ "$DEC_VAL" = "PASS" ] || [ "$DEC_VAL" = "WAIVER" ]; then
-                if [ "$PLAT_VAL" = "linux/amd64" ] && [ "$REPO_VAL" = "$REPO_SLUG" ]; then
+        # Verify Promotion Decision Attestation for App using dedicated semantic validator
+        APP_DEC_RAW=$(cosign verify-attestation --type promotiondecision --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_IMAGE}@${GHCR_DIGEST}" 2>/dev/null || true)
+        if [ -n "$APP_DEC_RAW" ]; then
+            echo "$APP_DEC_RAW" | jq -r 'if type == "array" then .[] else . end | select(.payload != null) | .payload' | base64 -d 2>/dev/null | jq -r '.predicate // empty' > /tmp/app-predicate.json 2>/dev/null || true
+            if [ -s /tmp/app-predicate.json ]; then
+                if python3 .github/scripts/validate_promotion_decision.py \
+                    --predicate-file /tmp/app-predicate.json \
+                    --expected-app-promoted-digest "$GHCR_DIGEST" \
+                    --expected-runner-promoted-digest "$RUNNER_GHCR_DIGEST" \
+                    --expected-repository "$REPO_SLUG" \
+                    --expected-platform "linux/amd64" >/dev/null 2>&1; then
                     APP_DECISION_VERIFIED=true
                 fi
+                rm -f /tmp/app-predicate.json
             fi
         fi
 
-        # Verify Promotion Decision Attestation for Runner
-        RUNNER_DEC_JSON=$(cosign verify-attestation --type promotiondecision --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" 2>/dev/null || true)
-        if echo "$RUNNER_DEC_JSON" | grep -q '"decision":'; then
-            DEC_VAL=$(echo "$RUNNER_DEC_JSON" | jq -r '.payload' | base64 -d 2>/dev/null | jq -r '.predicate.decision // empty')
-            PLAT_VAL=$(echo "$RUNNER_DEC_JSON" | jq -r '.payload' | base64 -d 2>/dev/null | jq -r '.predicate.platform // empty')
-            REPO_VAL=$(echo "$RUNNER_DEC_JSON" | jq -r '.payload' | base64 -d 2>/dev/null | jq -r '.predicate.workflow.repository // empty')
-            if [ "$DEC_VAL" = "PASS" ] || [ "$DEC_VAL" = "WAIVER" ]; then
-                if [ "$PLAT_VAL" = "linux/amd64" ] && [ "$REPO_VAL" = "$REPO_SLUG" ]; then
+        # Verify Promotion Decision Attestation for Runner using dedicated semantic validator
+        RUNNER_DEC_RAW=$(cosign verify-attestation --type promotiondecision --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" 2>/dev/null || true)
+        if [ -n "$RUNNER_DEC_RAW" ]; then
+            echo "$RUNNER_DEC_RAW" | jq -r 'if type == "array" then .[] else . end | select(.payload != null) | .payload' | base64 -d 2>/dev/null | jq -r '.predicate // empty' > /tmp/runner-predicate.json 2>/dev/null || true
+            if [ -s /tmp/runner-predicate.json ]; then
+                if python3 .github/scripts/validate_promotion_decision.py \
+                    --predicate-file /tmp/runner-predicate.json \
+                    --expected-app-promoted-digest "$GHCR_DIGEST" \
+                    --expected-runner-promoted-digest "$RUNNER_GHCR_DIGEST" \
+                    --expected-repository "$REPO_SLUG" \
+                    --expected-platform "linux/amd64" >/dev/null 2>&1; then
                     RUNNER_DECISION_VERIFIED=true
                 fi
+                rm -f /tmp/runner-predicate.json
             fi
         fi
     fi
