@@ -136,6 +136,15 @@ if ! command -v docker &> /dev/null; then
     exit 1
 fi
 
+HOST_PLATFORM="$(get_docker_host_platform)"
+if [ "$HOST_PLATFORM" != "linux/amd64" ]; then
+    echo "❌ ADMISSION ERROR: ArtifactGate currently admits only linux/amd64 workload images."
+    echo "   Detected host platform: $HOST_PLATFORM"
+    echo "   Multi-platform architectural admission is restricted to linux/amd64 to guarantee evaluated byte parity."
+    echo "❌ Deployment aborted."
+    exit 1
+fi
+
 # ─── DETECT HOST IP ─────────────────────────────────────────────────────────
 DETECTED_IP="127.0.0.1"
 
@@ -245,88 +254,75 @@ if [ "$INSECURE_LAB_MODE" = true ]; then
     echo "   ⚠️  INSECURE LAB BYPASS ACTIVE: Cryptographic provenance verification is disabled."
     echo "      [AUDIT LOG ENTRY] Verification bypassed by request on $(date)"
 else
-    HAS_VERIFIED=false
-    VERIFICATION_FAILED=false
+    APP_SIG_VERIFIED=false
+    RUNNER_SIG_VERIFIED=false
+    APP_VEX_VERIFIED=false
+    RUNNER_VEX_VERIFIED=false
+    APP_PROV_VERIFIED=false
+    RUNNER_PROV_VERIFIED=false
+    APP_SBOM_VERIFIED=false
+    RUNNER_SBOM_VERIFIED=false
     
     COSIGN_IDENTITY="https://github.com/${REPO_SLUG}/.github/workflows/image-promotion.yml@refs/heads/main"
     COSIGN_ISSUER="https://token.actions.githubusercontent.com"
 
-    # 1. Attempt verification with Cosign (Keyless verify)
+    # 1. Attempt verification with Cosign (Keyless verify for signatures, OpenVEX, Provenance, SBOM)
     if command -v cosign &> /dev/null; then
         echo "   🔍 Running Cosign keyless verification..."
         
-        # Verify Signatures
-        if cosign verify --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_IMAGE}@${GHCR_DIGEST}" >/dev/null 2>&1 && \
-           cosign verify --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" >/dev/null 2>&1; then
-            echo "   ✅ Cosign signatures verified for both application and runner."
-            
-            # Verify OpenVEX Attestations for both images
-            if cosign verify-attestation --type openvex --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_IMAGE}@${GHCR_DIGEST}" >/dev/null 2>&1 && \
-               cosign verify-attestation --type openvex --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" >/dev/null 2>&1; then
-                echo "   ✅ Cosign OpenVEX attestations verified for both images."
-                HAS_VERIFIED=true
-            else
-                echo "   ❌ Cosign OpenVEX attestation missing or invalid for one or both images."
-                VERIFICATION_FAILED=true
-            fi
-        else
-            echo "   ❌ Cosign signature verification failed for one or both images."
-            VERIFICATION_FAILED=true
-        fi
+        cosign verify --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_IMAGE}@${GHCR_DIGEST}" >/dev/null 2>&1 && APP_SIG_VERIFIED=true
+        cosign verify --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" >/dev/null 2>&1 && RUNNER_SIG_VERIFIED=true
+
+        cosign verify-attestation --type openvex --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_IMAGE}@${GHCR_DIGEST}" >/dev/null 2>&1 && APP_VEX_VERIFIED=true
+        cosign verify-attestation --type openvex --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" >/dev/null 2>&1 && RUNNER_VEX_VERIFIED=true
+
+        (cosign verify-attestation --type slsaprovenance --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_IMAGE}@${GHCR_DIGEST}" >/dev/null 2>&1 || \
+         cosign verify-attestation --type https://slsa.dev/provenance/v1 --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_IMAGE}@${GHCR_DIGEST}" >/dev/null 2>&1) && APP_PROV_VERIFIED=true
+
+        (cosign verify-attestation --type slsaprovenance --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" >/dev/null 2>&1 || \
+         cosign verify-attestation --type https://slsa.dev/provenance/v1 --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" >/dev/null 2>&1) && RUNNER_PROV_VERIFIED=true
+
+        (cosign verify-attestation --type spdxjson --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_IMAGE}@${GHCR_DIGEST}" >/dev/null 2>&1 || \
+         cosign verify-attestation --type spdx --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_IMAGE}@${GHCR_DIGEST}" >/dev/null 2>&1 || \
+         cosign verify-attestation --type https://spdx.dev/Document --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_IMAGE}@${GHCR_DIGEST}" >/dev/null 2>&1) && APP_SBOM_VERIFIED=true
+
+        (cosign verify-attestation --type spdxjson --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" >/dev/null 2>&1 || \
+         cosign verify-attestation --type spdx --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" >/dev/null 2>&1 || \
+         cosign verify-attestation --type https://spdx.dev/Document --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" >/dev/null 2>&1) && RUNNER_SBOM_VERIFIED=true
     fi
     
-    # 2. Attempt verification with GitHub CLI (with explicit identity/repo/predicate constraints)
-    if [ "$VERIFICATION_FAILED" = false ] && command -v gh &> /dev/null && gh auth status &> /dev/null 2>&1; then
-        echo "   🔍 Running GitHub CLI attestation verification..."
+    # 2. Attempt verification with GitHub CLI for any remaining unverified provenance or SBOM items
+    if command -v gh &> /dev/null && gh auth status &> /dev/null 2>&1; then
+        echo "   🔍 Checking GitHub CLI attestation API for build provenance and SBOMs..."
         
-        # Provenance constraints
-        if gh attestation verify "oci://${GHCR_IMAGE}@${GHCR_DIGEST}" \
-             --repo "$REPO_SLUG" \
-             --cert-identity "$COSIGN_IDENTITY" \
-             --predicate-type "https://slsa.dev/provenance/v1" >/dev/null 2>&1 && \
-           gh attestation verify "oci://${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" \
-             --repo "$REPO_SLUG" \
-             --cert-identity "$COSIGN_IDENTITY" \
-             --predicate-type "https://slsa.dev/provenance/v1" >/dev/null 2>&1; then
-            echo "   ✅ GitHub SLSA build provenance verified."
-            
-            # SBOM constraints
-            if gh attestation verify "oci://${GHCR_IMAGE}@${GHCR_DIGEST}" \
-                 --repo "$REPO_SLUG" \
-                 --cert-identity "$COSIGN_IDENTITY" \
-                 --predicate-type "https://spdx.dev/Document" >/dev/null 2>&1 && \
-               gh attestation verify "oci://${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" \
-                 --repo "$REPO_SLUG" \
-                 --cert-identity "$COSIGN_IDENTITY" \
-                 --predicate-type "https://spdx.dev/Document" >/dev/null 2>&1; then
-                echo "   ✅ GitHub SBOM attestations verified."
-                HAS_VERIFIED=true
-            else
-                echo "   ❌ GitHub SBOM attestation missing or invalid."
-                VERIFICATION_FAILED=true
-            fi
-        else
-            echo "   ❌ GitHub SLSA build provenance verification failed."
-            VERIFICATION_FAILED=true
-        fi
+        [ "$APP_PROV_VERIFIED" = true ] || gh attestation verify "oci://${GHCR_IMAGE}@${GHCR_DIGEST}" --repo "$REPO_SLUG" --cert-identity "$COSIGN_IDENTITY" --predicate-type "https://slsa.dev/provenance/v1" >/dev/null 2>&1 && APP_PROV_VERIFIED=true
+        [ "$RUNNER_PROV_VERIFIED" = true ] || gh attestation verify "oci://${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" --repo "$REPO_SLUG" --cert-identity "$COSIGN_IDENTITY" --predicate-type "https://slsa.dev/provenance/v1" >/dev/null 2>&1 && RUNNER_PROV_VERIFIED=true
+        [ "$APP_SBOM_VERIFIED" = true ] || gh attestation verify "oci://${GHCR_IMAGE}@${GHCR_DIGEST}" --repo "$REPO_SLUG" --cert-identity "$COSIGN_IDENTITY" --predicate-type "https://spdx.dev/Document" >/dev/null 2>&1 && APP_SBOM_VERIFIED=true
+        [ "$RUNNER_SBOM_VERIFIED" = true ] || gh attestation verify "oci://${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" --repo "$REPO_SLUG" --cert-identity "$COSIGN_IDENTITY" --predicate-type "https://spdx.dev/Document" >/dev/null 2>&1 && RUNNER_SBOM_VERIFIED=true
     fi
     
-    # 3. Decision
-    if [ "$VERIFICATION_FAILED" = true ]; then
+    # 3. Decision — ALL 8 booleans must be true
+    echo "   📊 Evidence Matrix Status:"
+    echo "      - App Signature:              $([ "$APP_SIG_VERIFIED" = true ] && echo '✅ VERIFIED' || echo '❌ MISSING/FAILED')"
+    echo "      - Runner Signature:           $([ "$RUNNER_SIG_VERIFIED" = true ] && echo '✅ VERIFIED' || echo '❌ MISSING/FAILED')"
+    echo "      - App OpenVEX Waiver:         $([ "$APP_VEX_VERIFIED" = true ] && echo '✅ VERIFIED' || echo '❌ MISSING/FAILED')"
+    echo "      - Runner OpenVEX Waiver:      $([ "$RUNNER_VEX_VERIFIED" = true ] && echo '✅ VERIFIED' || echo '❌ MISSING/FAILED')"
+    echo "      - App SLSA Build Provenance:  $([ "$APP_PROV_VERIFIED" = true ] && echo '✅ VERIFIED' || echo '❌ MISSING/FAILED')"
+    echo "      - Runner SLSA Build Provenance: $([ "$RUNNER_PROV_VERIFIED" = true ] && echo '✅ VERIFIED' || echo '❌ MISSING/FAILED')"
+    echo "      - App SPDX SBOM:              $([ "$APP_SBOM_VERIFIED" = true ] && echo '✅ VERIFIED' || echo '❌ MISSING/FAILED')"
+    echo "      - Runner SPDX SBOM:           $([ "$RUNNER_SBOM_VERIFIED" = true ] && echo '✅ VERIFIED' || echo '❌ MISSING/FAILED')"
+
+    if [ "$APP_SIG_VERIFIED" = true ] && [ "$RUNNER_SIG_VERIFIED" = true ] && \
+       [ "$APP_VEX_VERIFIED" = true ] && [ "$RUNNER_VEX_VERIFIED" = true ] && \
+       [ "$APP_PROV_VERIFIED" = true ] && [ "$RUNNER_PROV_VERIFIED" = true ] && \
+       [ "$APP_SBOM_VERIFIED" = true ] && [ "$RUNNER_SBOM_VERIFIED" = true ]; then
+        echo "✅ Full evidence matrix verified. Cryptographic trust verification passed."
+    else
         echo ""
-        echo "❌ SECURITY ALERT: Provenance verification FAILED."
-        echo "   The image may have been tampered with or did not originate from the trusted pipeline."
+        echo "❌ SECURITY ALERT: Cryptographic evidence matrix INCOMPLETE or INVALID."
+        echo "   All 8 required evidence items (Signatures, OpenVEX, SLSA Provenance, SPDX SBOM for both images) must pass."
         echo "   Deployment aborted."
         exit 1
-    elif [ "$HAS_VERIFIED" = false ]; then
-        echo ""
-        echo "⚠️  Provenance verification requires either Cosign or the GitHub CLI (gh) to be authenticated."
-        echo "   Please install Cosign (https://sigstore.dev) or authenticate the GitHub CLI (gh auth login)."
-        echo "   Alternatively, use --insecure-lab-mode for a local-only verification bypass."
-        echo "❌ Deployment aborted."
-        exit 1
-    else
-        echo "✅ Cryptographic trust verification passed."
     fi
 fi
 

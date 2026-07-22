@@ -13,7 +13,7 @@ vendor or container is universally secure.
 
 1. **Upstream candidate** — an allowed vendor reference that has not yet earned a
    deployment decision. A moving label such as `latest` is resolved to a semantic
-   version and then to immutable application and runner digests.
+   version and then to immutable application and runner digests for the `linux/amd64` architecture. ArtifactGate currently admits only Linux AMD64 workload images to guarantee byte-level parity between scanned and deployed objects.
 2. **Assessed pair** — the exact digests have composition, vulnerability, malware,
    secret, licence and bounded runtime evidence attached. This evidence can still
    contain unknowns and findings.

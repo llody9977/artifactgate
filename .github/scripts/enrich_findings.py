@@ -179,28 +179,26 @@ def main():
                 gate_decision = "MANUAL_REVIEW"
                 gate_reasons.append("runtime_observation_unknown")
 
-        # Rule C: Parse CVSS vectors for network/pre-auth/low-complexity exploits (AV:N and PR:N and AC:L)
+        # Rule C: Parse CVSS vectors atomically for network/pre-auth/low-complexity exploits (AV:N and PR:N and AC:L/AT:N)
         cvss_data = vuln.get("CVSS", {})
         cvss_vectors = []
         for source in ["nvd", "redhat", "ghsa"]:
-            vec = cvss_data.get(source, {}).get("V3Vector")
-            if vec:
-                cvss_vectors.append(vec)
+            v3 = cvss_data.get(source, {}).get("V3Vector")
+            v4 = cvss_data.get(source, {}).get("V4Vector")
+            if v3:
+                cvss_vectors.append(v3)
+            if v4:
+                cvss_vectors.append(v4)
 
-        network_attack = False
-        pre_auth = False
-        low_complexity = False
+        network_exploit = False
         for vec in cvss_vectors:
-            parts = vec.split("/")
-            for part in parts:
-                if part == "AV:N":
-                    network_attack = True
-                if part == "PR:N":
-                    pre_auth = True
-                if part == "AC:L":
-                    low_complexity = True
+            parts = set(vec.split("/"))
+            # Atomic check per single vector
+            if {"AV:N", "PR:N", "AC:L"}.issubset(parts) or ({"AV:N", "PR:N"}.issubset(parts) and ("AC:L" in parts or "AT:N" in parts)):
+                network_exploit = True
+                break
 
-        if network_attack and pre_auth and low_complexity:
+        if network_exploit:
             gate_decision = "MANUAL_REVIEW"
             gate_reasons.append("network_preauth_low_complexity_exploit")
             summary["network_exploit_vector_count"] += 1
@@ -219,21 +217,36 @@ def main():
         vuln["GateDecision"] = gate_decision
         vuln["GateReasons"] = sorted(set(gate_reasons))
 
-    # 2. Process Licenses (In-place)
+    # 2. Process Licenses (In-place with policy classification)
+    # Load policy/license-policy.yml if available
+    deny_licenses = {"AGPL-1.0-only", "AGPL-1.0-or-later", "AGPL-3.0-only", "AGPL-3.0-or-later", "SSPL-1.0"}
+    review_licenses = {"GPL-1.0-only", "GPL-1.0-or-later", "GPL-2.0-only", "GPL-2.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later", "LGPL-2.0-only", "LGPL-2.0-or-later", "LGPL-2.1-only", "LGPL-2.1-or-later", "LGPL-3.0-only", "LGPL-3.0-or-later", "MPL-1.1", "MPL-2.0", "EPL-1.0", "EPL-2.0"}
+
+    license_policy_path = "policy/license-policy.yml"
+    if os.path.exists(license_policy_path):
+        try:
+            with open(license_policy_path) as f:
+                import yaml
+                lic_pol = yaml.safe_load(f) or {}
+                if lic_pol.get("deny"):
+                    deny_licenses = set(lic_pol.get("deny"))
+                if lic_pol.get("manual_review"):
+                    review_licenses = set(lic_pol.get("manual_review"))
+        except Exception as exc:
+            print(f"Warning: Could not parse {license_policy_path}, using built-in defaults: {exc}", file=sys.stderr)
+
     for result in report.get("Results", []):
         for lic in result.get("Licenses") or []:
-            lic_name = lic.get("Name", lic.get("License", "UNKNOWN"))
-            severity = lic.get("Severity", "UNKNOWN")
+            lic_name = lic.get("Name", lic.get("License", "UNKNOWN")).strip()
             category = lic.get("Category", "").lower()
 
-            # Identify restricted copyleft licenses (GPL, AGPL, LGPL)
-            is_prohibited = category in {"restricted", "reciprocal"} or any(copyleft in lic_name.upper() for copyleft in ["GPL", "AGPL", "LGPL"])
+            needs_review = lic_name in deny_licenses or lic_name in review_licenses or category in {"restricted", "reciprocal"}
 
             lic_decision = "AUTO_ALLOWED"
             lic_reasons = []
-            if is_prohibited:
+            if needs_review:
                 lic_decision = "MANUAL_REVIEW"
-                lic_reasons.append(f"prohibited_license_{lic_name.lower()}")
+                lic_reasons.append(f"licence_requires_review_{lic_name.lower()}")
                 summary["prohibited_license_count"] += 1
                 summary["manual_review_count"] += 1
 
