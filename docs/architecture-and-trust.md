@@ -29,6 +29,23 @@ digest establishes byte identity; the SBOM describes known composition; scanning
 enrichment support a risk decision; the ArtifactGate attestation records the promotion
 path; and runtime hardening limits impact. None is a substitute for the others.
 
+## Provenance & Verification Boundaries
+
+Internal SLSA provenance and promotion-decision attestations prove that:
+- ArtifactGate handled, evaluated, and promoted the digest.
+- The promotion workflow executed policy checks and generated signed evidence.
+
+They do NOT prove:
+- How the upstream vendor built the original artifact.
+- Upstream source-code integrity or build environment security.
+- Reproducibility of the vendor build.
+- Absolute absence of malicious content.
+
+## Dynamic Testing & Scanner Limitations
+- **Malware Scanning**: ClamAV reported no detections using the recorded engine (v1.5.3) and signature database versions.
+- **DAST Coverage**: OWASP ZAP baseline scans are limited to exercised HTTP endpoints and unauthenticated routes; protected or hidden APIs are not covered.
+- **eBPF Observation**: Tracee eBPF monitoring captures only the specific smoke-test execution path. "Not observed" indicates unexercised code during smoke testing, not proof of code unreachability or safety.
+
 ## Control Inventory and Threat Mapping
 
 The following table maps the specific security controls implemented in this repository to the risks they address, their execution context, enforcement behavior, and alignment with industry standards.
