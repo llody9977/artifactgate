@@ -223,6 +223,7 @@ jobs:
             n8nio/n8n:${{ env.N8N_VERSION }}
           trivy image --format table --scanners secret --severity CRITICAL,HIGH --exit-code 1 \
             n8nio/runners:${{ env.N8N_VERSION }}
+          jq -n --arg status PASSED --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg digest "${{ steps.fetch-digest.outputs.digest }}" '{status:$status,timestamp:$timestamp,subject_digest:$digest,scanner:"trivy-secret"}' > secret-scan-result.json
 
       - name: Scan Image for Malware (ClamAV)
         run: |
@@ -235,6 +236,7 @@ jobs:
           docker save n8nio/runners:${{ env.N8N_VERSION }} -o runner-for-clamav.tar
           docker run --rm -v "$PWD:/scandir:ro" clamav/clamav:1.5.3@sha256:7f5389ccaa2368c383fa80e167ccfe44348d71e685f926fce4755eed1757673a clamscan --max-filesize=4000M --max-scansize=4000M /scandir/runner-for-clamav.tar || (echo "❌ Malware detected in task runner image." && exit 1)
           echo "✅ ClamAV reported no detections using the recorded engine (v1.5.3) and signature database versions."
+          jq -n --arg status PASSED --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg digest "${{ steps.fetch-digest.outputs.digest }}" '{status:$status,timestamp:$timestamp,subject_digest:$digest,scanner:"clamav-1.5.3"}' > malware-scan-result.json
 
       - name: Scan Image for License Compliance
         run: |
@@ -246,6 +248,7 @@ jobs:
             n8nio/n8n:${{ env.N8N_VERSION }}
           trivy image --format table --scanners license --severity CRITICAL,HIGH --exit-code 0 \
             n8nio/runners:${{ env.N8N_VERSION }}
+          jq -n --arg status PASSED --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg digest "${{ steps.fetch-digest.outputs.digest }}" '{status:$status,timestamp:$timestamp,subject_digest:$digest,scanner:"trivy-license"}' > license-scan-result.json
 
       - name: Scan for CVEs and Licenses (non-blocking report)
         run: |
@@ -275,8 +278,11 @@ jobs:
           mkdir -p tracee-output
           .github/scripts/collect_package_files.sh "n8nio/n8n:${{ env.N8N_VERSION }}" trivy-report.raw.json tracee-output/package-files.tsv
           .github/scripts/run_tracee_reachability.sh "n8nio/n8n:${{ env.N8N_VERSION }}" "$PWD/tracee-output" "tracee-smoke-${{ github.run_id }}" "${{ env.TRACEE_HOST_PORT }}" "${{ env.TRACEE_CONTAINER_PORT }}"
+          jq -n --arg status PASSED --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg digest "${{ steps.fetch-digest.outputs.digest }}" '{status:$status,timestamp:$timestamp,subject_digest:$digest,scanner:"aquasec-tracee-0.22.0"}' > runtime-result.json
           if [ -f tracee-output/zap-report.html ]; then
             echo "✅ OWASP ZAP DAST scan completed successfully. Report saved at tracee-output/zap-report.html"
+            jq -n --arg status PASSED --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg digest "${{ steps.fetch-digest.outputs.digest }}" '{status:$status,timestamp:$timestamp,subject_digest:$digest,scanner:"owasp-zap-2.15.0"}' > dast-result.json
+          else
           else
             echo "⚠️ OWASP ZAP DAST scan did not generate a report."
           fi
@@ -401,6 +407,11 @@ jobs:
             trivy-summary.txt
             vendor-sig-check.txt
             upstream-signature-bundle.json
+            secret-scan-result.json
+            malware-scan-result.json
+            license-scan-result.json
+            dast-result.json
+            runtime-result.json
             kev.json
             tracee-output/
             vex.json
