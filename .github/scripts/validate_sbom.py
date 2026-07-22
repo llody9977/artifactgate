@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Enhanced SBOM Quality Validation Script
-Validates SPDX JSON SBOM documents for schema headers, creation metadata, package counts, SPDX identifiers, relationships, and error markers.
+Validates SPDX JSON SBOM documents for schema headers, creation metadata, package counts, SPDX identifiers, relationships, target digest binding, and error markers.
 """
 
 import sys
@@ -44,12 +44,25 @@ def validate_sbom(sbom_path, target_digest=None, min_package_count=10):
         print(f"❌ SBOM ERROR: Missing creationInfo creators metadata in '{sbom_path}'.", file=sys.stderr)
         return False
 
-    # 3. Check Target Digest Binding if provided
+    # 3. Structured Target Digest Binding
     if target_digest:
-        digest_clean = target_digest.replace("sha256:", "").lower()
-        content_str = json.dumps(data).lower()
-        if digest_clean not in content_str:
-            print(f"❌ SBOM ERROR: Target digest '{target_digest}' is not referenced in '{sbom_path}'.", file=sys.stderr)
+        clean_digest = target_digest.split("@")[-1].replace("sha256:", "").strip().lower()
+        digest_bound = False
+
+        # Check document namespace
+        if clean_digest in doc_namespace.lower():
+            digest_bound = True
+
+        # Check root packages & external references / checksums / comments
+        packages = data.get("packages", [])
+        for pkg in packages:
+            pkg_str = json.dumps(pkg).lower()
+            if clean_digest in pkg_str:
+                digest_bound = True
+                break
+
+        if not digest_bound:
+            print(f"❌ SBOM ERROR: Subject image digest '{clean_digest}' is not bound to document namespace or package metadata in '{sbom_path}'.", file=sys.stderr)
             return False
 
     # 4. Check Package Array & Thresholds

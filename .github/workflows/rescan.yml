@@ -103,21 +103,29 @@ jobs:
             fi
           fi
 
-          echo "--- Re-scanning latest promoted image n8n-trusted:$VERSION ---"
+          echo "--- Re-scanning latest promoted image n8n-trusted for $VERSION ---"
 
           IMAGE="ghcr.io/${{ github.repository }}/n8n-trusted:$VERSION"
           RUNNER_IMAGE="ghcr.io/${{ github.repository }}/n8n-runners-trusted:$VERSION"
+
+          # Attempt to resolve immutable digests from signed decision predicate
+          if gh release download "$LATEST_TAG" --repo "${{ github.repository }}" \
+               --pattern promotion-decision.json --dir "waiver-$VERSION" 2>/dev/null; then
+            APP_DIG=$(jq -r '.application.promotedDigest // empty' "waiver-$VERSION/promotion-decision.json")
+            RUN_DIG=$(jq -r '.runner.promotedDigest // empty' "waiver-$VERSION/promotion-decision.json")
+            if [ -n "$APP_DIG" ] && [ -n "$RUN_DIG" ]; then
+              IMAGE="ghcr.io/${{ github.repository }}/n8n-trusted@$APP_DIG"
+              RUNNER_IMAGE="ghcr.io/${{ github.repository }}/n8n-runners-trusted@$RUN_DIG"
+              echo "✅ Resolved immutable digests from signed promotion decision: $APP_DIG"
+            fi
+          fi
+
           if ! docker pull "$IMAGE" > /dev/null 2>&1; then
-            echo "  ⚠️  Could not pull $IMAGE — skipping"
-            echo "| $VERSION | — | — | — | — | — | ⚠️ Skipped |" >> $GITHUB_STEP_SUMMARY
-            echo "scanned_versions=[]" >> $GITHUB_OUTPUT
-            echo "alert_found=false" >> $GITHUB_OUTPUT
-            echo "alert_body<<EOF" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
-            exit 0
+            echo "❌ CRITICAL ERROR: Could not pull promoted image $IMAGE; failing closed."
+            exit 1
           fi
           if ! docker pull "$RUNNER_IMAGE" > /dev/null 2>&1; then
-            echo "Could not pull required promoted runner $RUNNER_IMAGE; failing closed."
+            echo "❌ CRITICAL ERROR: Could not pull required promoted runner $RUNNER_IMAGE; failing closed."
             exit 1
           fi
 
@@ -198,10 +206,10 @@ jobs:
           python3 .github/scripts/generate_summary.py "rescan-$VERSION.json" kev.json "$VERSION" || true
 
           # Escalate if alert condition triggers
-          if [ "$MANUAL_REVIEW_COUNT" -gt 0 ]; then
+          if [ "$MANUAL_REVIEW_COUNT" -gt 0 ] || [ "$WAIVER_EXPIRED" = true ]; then
             ALERT_FOUND=true
             ALERT_BODY="$ALERT_BODY\n\n### \`n8n-trusted:$VERSION\`\n"
-            ALERT_BODY="$ALERT_BODY- 🟠 **$MANUAL_REVIEW_COUNT finding(s)** now require manual review under the promotion gate\n"
+            [ "$MANUAL_REVIEW_COUNT" -gt 0 ] && ALERT_BODY="$ALERT_BODY- 🟠 **$MANUAL_REVIEW_COUNT finding(s)** now require manual review under the promotion gate\n"
             [ "$AGE_REVIEW_COUNT" -gt 0 ] && ALERT_BODY="$ALERT_BODY- ⏱️ **$AGE_REVIEW_COUNT** critical/high CVE(s) are now at least 30 days old\n"
             [ "$KEV_REVIEW_COUNT" -gt 0 ] && ALERT_BODY="$ALERT_BODY- 🚨 **$KEV_REVIEW_COUNT** critical/high CVE(s) now match KEV\n"
             [ "$EPSS_REVIEW_COUNT" -gt 0 ] && ALERT_BODY="$ALERT_BODY- 📈 **$EPSS_REVIEW_COUNT** critical/high CVE(s) are now EPSS HIGH/CRITICAL\n"

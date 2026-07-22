@@ -29,6 +29,14 @@ digest establishes byte identity; the SBOM describes known composition; scanning
 enrichment support a risk decision; the ArtifactGate attestation records the promotion
 path; and runtime hardening limits impact. None is a substitute for the others.
 
+## Semantic Admission Verification Controls
+
+During workload deployment, `iac/n8n/install.sh` delegates attestation validation to [.github/scripts/validate_promotion_decision.py](file:///Users/llody/Documents/secure-ci-deploy/.github/scripts/validate_promotion_decision.py), enforcing:
+- **Exact 4-Digest Tracking**: Validates `application.sourceDigest`, `application.promotedDigest`, `runner.sourceDigest`, and `runner.promotedDigest` match target deployment digests.
+- **Waiver Schema & Expiration**: For `WAIVER` decisions, enforces `waiver.present == True`, validates that `expiresOn` is in the future (max 14 days for Critical, 30 days for High), and verifies `acceptedCves`, `reviewer`, and `justification` exist.
+- **Policy Hash Verification**: Requires `vulnerabilityPolicyHash`, `ingestionPolicyHash`, and `licensePolicyHash` to be present and match local repository policies.
+- **Evidence Flag & Manifest Validation**: Requires all 7 scan completion flags to be `True` and `evidenceManifestHash` to match the canonical evidence manifest.
+
 ## Provenance & Verification Boundaries
 
 Internal SLSA provenance and promotion-decision attestations prove that:
