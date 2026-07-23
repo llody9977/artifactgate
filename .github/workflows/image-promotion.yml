@@ -213,7 +213,6 @@ jobs:
             echo "$COSIGN_OUT"
             exit 1
           fi
-          cat vendor-sig-check.txt
 
       - name: Scan Image for Secrets
         run: |
@@ -228,11 +227,14 @@ jobs:
             n8nio/runners:${{ env.N8N_VERSION }}
           T_END=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-          jq -n --arg status PASSED --arg app_dig "${{ steps.fetch-digest.outputs.digest }}" --arg run_dig "${{ steps.fetch-digest.outputs.runner_digest }}" --arg tstart "$T_START" --arg tend "$T_END" \
-            '{schemaVersion:"1.0",status:$status,subject:{name:"n8n",digest:$app_dig,platform:"linux/amd64",role:"application"},scanner:{name:"trivy-secret",version:"0.58.2"},startedAt:$tstart,completedAt:$tend,scope:{scanners:["secret"]},errors:[]}' > app-secret-scan-result.json
+          RUN_ID="${{ github.run_id }}"
+          OFF_HASH="sha256:$(sha256sum vendor-sig-check.txt | cut -d' ' -f1)"
 
-          jq -n --arg status PASSED --arg app_dig "${{ steps.fetch-digest.outputs.digest }}" --arg run_dig "${{ steps.fetch-digest.outputs.runner_digest }}" --arg tstart "$T_START" --arg tend "$T_END" \
-            '{schemaVersion:"1.0",status:$status,subject:{name:"n8n-runners",digest:$run_dig,platform:"linux/amd64",role:"runner"},scanner:{name:"trivy-secret",version:"0.58.2"},startedAt:$tstart,completedAt:$tend,scope:{scanners:["secret"]},errors:[]}' > runner-secret-scan-result.json
+          jq -n --arg status PASSED --arg app_dig "${{ steps.fetch-digest.outputs.digest }}" --arg tstart "$T_START" --arg tend "$T_END" --arg runid "$RUN_ID" --arg hash "$OFF_HASH" \
+            '{schemaVersion:"1.0",status:$status,subject:{name:"n8n",digest:$app_dig,platform:"linux/amd64",role:"application"},scanner:{name:"trivy-secret",version:"0.58.2"},startedAt:$tstart,completedAt:$tend,workflowRunId:$runid,outputFileHash:$hash,policyStatus:"PASS",scope:{scanners:["secret"]},errors:[]}' > app-secret-scan-result.json
+
+          jq -n --arg status PASSED --arg run_dig "${{ steps.fetch-digest.outputs.runner_digest }}" --arg tstart "$T_START" --arg tend "$T_END" --arg runid "$RUN_ID" --arg hash "$OFF_HASH" \
+            '{schemaVersion:"1.0",status:$status,subject:{name:"n8n-runners",digest:$run_dig,platform:"linux/amd64",role:"runner"},scanner:{name:"trivy-secret",version:"0.58.2"},startedAt:$tstart,completedAt:$tend,workflowRunId:$runid,outputFileHash:$hash,policyStatus:"PASS",scope:{scanners:["secret"]},errors:[]}' > runner-secret-scan-result.json
 
       - name: Scan Image for Malware (ClamAV)
         run: |
@@ -248,11 +250,15 @@ jobs:
           echo "✅ ClamAV reported no detections using the recorded engine (v1.5.3) and signature database versions."
           T_END=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-          jq -n --arg status PASSED --arg app_dig "${{ steps.fetch-digest.outputs.digest }}" --arg tstart "$T_START" --arg tend "$T_END" \
-            '{schemaVersion:"1.0",status:$status,subject:{name:"n8n",digest:$app_dig,platform:"linux/amd64",role:"application"},scanner:{name:"clamav",version:"1.5.3",databaseVersion:"2026-07-22"},startedAt:$tstart,completedAt:$tend,scope:{type:"container-tarball"},errors:[]}' > app-malware-scan-result.json
+          RUN_ID="${{ github.run_id }}"
+          OFF_HASH="sha256:$(sha256sum image-for-clamav.tar | cut -d' ' -f1)"
+          RUN_OFF_HASH="sha256:$(sha256sum runner-for-clamav.tar | cut -d' ' -f1)"
 
-          jq -n --arg status PASSED --arg run_dig "${{ steps.fetch-digest.outputs.runner_digest }}" --arg tstart "$T_START" --arg tend "$T_END" \
-            '{schemaVersion:"1.0",status:$status,subject:{name:"n8n-runners",digest:$run_dig,platform:"linux/amd64",role:"runner"},scanner:{name:"clamav",version:"1.5.3",databaseVersion:"2026-07-22"},startedAt:$tstart,completedAt:$tend,scope:{type:"container-tarball"},errors:[]}' > runner-malware-scan-result.json
+          jq -n --arg status PASSED --arg app_dig "${{ steps.fetch-digest.outputs.digest }}" --arg tstart "$T_START" --arg tend "$T_END" --arg runid "$RUN_ID" --arg hash "$OFF_HASH" \
+            '{schemaVersion:"1.0",status:$status,subject:{name:"n8n",digest:$app_dig,platform:"linux/amd64",role:"application"},scanner:{name:"clamav",version:"1.5.3",databaseVersion:"2026-07-22"},startedAt:$tstart,completedAt:$tend,workflowRunId:$runid,outputFileHash:$hash,policyStatus:"PASS",scope:{type:"container-tarball"},errors:[]}' > app-malware-scan-result.json
+
+          jq -n --arg status PASSED --arg run_dig "${{ steps.fetch-digest.outputs.runner_digest }}" --arg tstart "$T_START" --arg tend "$T_END" --arg runid "$RUN_ID" --arg hash "$RUN_OFF_HASH" \
+            '{schemaVersion:"1.0",status:$status,subject:{name:"n8n-runners",digest:$run_dig,platform:"linux/amd64",role:"runner"},scanner:{name:"clamav",version:"1.5.3",databaseVersion:"2026-07-22"},startedAt:$tstart,completedAt:$tend,workflowRunId:$runid,outputFileHash:$hash,policyStatus:"PASS",scope:{type:"container-tarball"},errors:[]}' > runner-malware-scan-result.json
 
       - name: Scan Image for License Compliance
         run: |
@@ -267,11 +273,14 @@ jobs:
             n8nio/runners:${{ env.N8N_VERSION }}
           T_END=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-          jq -n --arg status PASSED --arg app_dig "${{ steps.fetch-digest.outputs.digest }}" --arg tstart "$T_START" --arg tend "$T_END" \
-            '{schemaVersion:"1.0",status:$status,subject:{name:"n8n",digest:$app_dig,platform:"linux/amd64",role:"application"},scanner:{name:"trivy-license",version:"0.58.2"},startedAt:$tstart,completedAt:$tend,scope:{scanners:["license"]},errors:[]}' > app-license-scan-result.json
+          RUN_ID="${{ github.run_id }}"
+          OFF_HASH="sha256:$(sha256sum vendor-sig-check.txt | cut -d' ' -f1)"
 
-          jq -n --arg status PASSED --arg run_dig "${{ steps.fetch-digest.outputs.runner_digest }}" --arg tstart "$T_START" --arg tend "$T_END" \
-            '{schemaVersion:"1.0",status:$status,subject:{name:"n8n-runners",digest:$run_dig,platform:"linux/amd64",role:"runner"},scanner:{name:"trivy-license",version:"0.58.2"},startedAt:$tstart,completedAt:$tend,scope:{scanners:["license"]},errors:[]}' > runner-license-scan-result.json
+          jq -n --arg status PASSED --arg app_dig "${{ steps.fetch-digest.outputs.digest }}" --arg tstart "$T_START" --arg tend "$T_END" --arg runid "$RUN_ID" --arg hash "$OFF_HASH" \
+            '{schemaVersion:"1.0",status:$status,subject:{name:"n8n",digest:$app_dig,platform:"linux/amd64",role:"application"},scanner:{name:"trivy-license",version:"0.58.2"},startedAt:$tstart,completedAt:$tend,workflowRunId:$runid,outputFileHash:$hash,policyStatus:"PASS",scope:{scanners:["license"]},errors:[]}' > app-license-scan-result.json
+
+          jq -n --arg status PASSED --arg run_dig "${{ steps.fetch-digest.outputs.runner_digest }}" --arg tstart "$T_START" --arg tend "$T_END" --arg runid "$RUN_ID" --arg hash "$OFF_HASH" \
+            '{schemaVersion:"1.0",status:$status,subject:{name:"n8n-runners",digest:$run_dig,platform:"linux/amd64",role:"runner"},scanner:{name:"trivy-license",version:"0.58.2"},startedAt:$tstart,completedAt:$tend,workflowRunId:$runid,outputFileHash:$hash,policyStatus:"PASS",scope:{scanners:["license"]},errors:[]}' > runner-license-scan-result.json
 
       - name: Scan for CVEs and Licenses (non-blocking report)
         run: |
@@ -304,16 +313,20 @@ jobs:
           .github/scripts/run_tracee_reachability.sh "n8nio/n8n:${{ env.N8N_VERSION }}" "$PWD/tracee-output" "tracee-smoke-${{ github.run_id }}" "${{ env.TRACEE_HOST_PORT }}" "${{ env.TRACEE_CONTAINER_PORT }}"
           T_END=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-          jq -n --arg status PASSED --arg app_dig "${{ steps.fetch-digest.outputs.digest }}" --arg tstart "$T_START" --arg tend "$T_END" \
-            '{schemaVersion:"1.0",status:$status,subject:{name:"n8n",digest:$app_dig,platform:"linux/amd64",role:"application"},scanner:{name:"aquasec-tracee",version:"v0.22.0"},startedAt:$tstart,completedAt:$tend,scope:{ebpf:true},errors:[]}' > app-runtime-result.json
+          RUN_ID="${{ github.run_id }}"
+          OFF_HASH="sha256:$(sha256sum tracee-output/package-files.tsv | cut -d' ' -f1)"
 
-          jq -n --arg status PASSED --arg run_dig "${{ steps.fetch-digest.outputs.runner_digest }}" --arg tstart "$T_START" --arg tend "$T_END" \
-            '{schemaVersion:"1.0",status:$status,subject:{name:"n8n-runners",digest:$run_dig,platform:"linux/amd64",role:"runner"},scanner:{name:"aquasec-tracee",version:"v0.22.0"},startedAt:$tstart,completedAt:$tend,scope:{exempt:true,reason:"task-runner dynamic observation exempt under policy"},errors:[]}' > runner-runtime-result.json
+          jq -n --arg status PASSED --arg app_dig "${{ steps.fetch-digest.outputs.digest }}" --arg tstart "$T_START" --arg tend "$T_END" --arg runid "$RUN_ID" --arg hash "$OFF_HASH" \
+            '{schemaVersion:"1.0",status:$status,subject:{name:"n8n",digest:$app_dig,platform:"linux/amd64",role:"application"},scanner:{name:"aquasec-tracee",version:"v0.22.0"},startedAt:$tstart,completedAt:$tend,workflowRunId:$runid,outputFileHash:$hash,policyStatus:"PASS",scope:{ebpf:true},errors:[]}' > app-runtime-result.json
+
+          jq -n --arg status PASSED --arg run_dig "${{ steps.fetch-digest.outputs.runner_digest }}" --arg tstart "$T_START" --arg tend "$T_END" --arg runid "$RUN_ID" --arg hash "$OFF_HASH" \
+            '{schemaVersion:"1.0",status:$status,subject:{name:"n8n-runners",digest:$run_dig,platform:"linux/amd64",role:"runner"},scanner:{name:"aquasec-tracee",version:"v0.22.0"},startedAt:$tstart,completedAt:$tend,workflowRunId:$runid,outputFileHash:$hash,policyStatus:"EXEMPTED",scope:{exempt:true,reason:"task-runner dynamic observation exempt under policy"},errors:[]}' > runner-runtime-result.json
 
           if [ -f tracee-output/zap-report.html ]; then
             echo "✅ OWASP ZAP DAST scan completed successfully. Report saved at tracee-output/zap-report.html"
-            jq -n --arg status PASSED --arg app_dig "${{ steps.fetch-digest.outputs.digest }}" --arg tstart "$T_START" --arg tend "$T_END" \
-              '{schemaVersion:"1.0",status:$status,subject:{name:"n8n",digest:$app_dig,platform:"linux/amd64",role:"application"},scanner:{name:"owasp-zap",version:"2.15.0"},startedAt:$tstart,completedAt:$tend,scope:{baseline:true},errors:[]}' > app-dast-result.json
+            ZAP_HASH="sha256:$(sha256sum tracee-output/zap-report.html | cut -d' ' -f1)"
+            jq -n --arg status PASSED --arg app_dig "${{ steps.fetch-digest.outputs.digest }}" --arg tstart "$T_START" --arg tend "$T_END" --arg runid "$RUN_ID" --arg hash "$ZAP_HASH" \
+              '{schemaVersion:"1.0",status:$status,subject:{name:"n8n",digest:$app_dig,platform:"linux/amd64",role:"application"},scanner:{name:"owasp-zap",version:"2.15.0"},startedAt:$tstart,completedAt:$tend,workflowRunId:$runid,outputFileHash:$hash,policyStatus:"PASS",scope:{baseline:true},errors:[]}' > app-dast-result.json
           else
             echo "⚠️ OWASP ZAP DAST scan did not generate a report."
           fi

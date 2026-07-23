@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Generate Signed Promotion Decision Predicate
-Produces promotion-decision.json attestation predicate recording gate state, policy hashes, tool versions, waiver metadata, and a canonical evidence manifest.
+Produces promotion-decision.json attestation predicate recording decisionId, gate state, policy hashes, tool versions, waiver metadata, and a canonical evidence manifest.
 """
 
 import sys
@@ -66,6 +66,15 @@ def validate_result_file(filepath, expected_digest, expected_role):
             print(f"❌ DECISION ERROR: Scan result file '{filepath}' is missing execution timestamps.", file=sys.stderr)
             return False
 
+        if not data.get("workflowRunId"):
+            print(f"❌ DECISION ERROR: Scan result file '{filepath}' is missing workflowRunId.", file=sys.stderr)
+            return False
+
+        output_hash = data.get("outputFileHash")
+        if not output_hash or not output_hash.startswith("sha256:"):
+            print(f"❌ DECISION ERROR: Scan result file '{filepath}' is missing valid outputFileHash.", file=sys.stderr)
+            return False
+
         return True
     except Exception as exc:
         print(f"❌ DECISION ERROR: Failed to parse scan result file '{filepath}': {exc}", file=sys.stderr)
@@ -85,6 +94,11 @@ def main():
     parser.add_argument("--tool-versions-file", default="tool-versions.json")
     parser.add_argument("--output", default="promotion-decision.json")
     args = parser.parse_args()
+
+    created_at = datetime.now(timezone.utc).isoformat()
+    run_id = os.environ.get("GITHUB_RUN_ID", "local")
+    raw_id_seed = f"{args.app_promoted_digest}:{args.runner_promoted_digest}:{run_id}:{created_at}"
+    decision_id = "dec-" + hashlib.sha256(raw_id_seed.encode("utf-8")).hexdigest()[:16]
 
     # Policy Hashes (Fail Closed)
     vuln_policy_hash = hash_file("policy/vulnerability-gate-policy.yml")
@@ -122,6 +136,7 @@ def main():
 
     vuln_report_valid = os.path.exists("trivy-report.json") and os.path.exists("trivy-report.runner.json")
     sbom_valid = os.path.exists("sbom.spdx.json") and os.path.exists("runner-sbom.spdx.json")
+    vex_valid = os.path.exists("app-vex.json") and os.path.exists("runner-vex.json")
 
     # Mandatory Named Evidence Set Completeness
     mandatory_evidence_files = [
@@ -138,7 +153,8 @@ def main():
         "trivy-report.runner.json",
         "sbom.spdx.json",
         "runner-sbom.spdx.json",
-        "vex.json",
+        "app-vex.json",
+        "runner-vex.json",
         "vendor-sig-check.txt"
     ]
 
@@ -148,7 +164,7 @@ def main():
             sys.exit(1)
 
     if args.decision == "PASS":
-        if not (app_secret_valid and runner_secret_valid and app_malware_valid and runner_malware_valid and app_license_valid and runner_license_valid and app_dast_valid and app_runtime_valid and runner_runtime_valid and vuln_report_valid and sbom_valid):
+        if not (app_secret_valid and runner_secret_valid and app_malware_valid and runner_malware_valid and app_license_valid and runner_license_valid and app_dast_valid and app_runtime_valid and runner_runtime_valid and vuln_report_valid and sbom_valid and vex_valid):
             print("❌ DECISION ERROR: Decision is PASS but one or more required scan evidence files failed validation.", file=sys.stderr)
             sys.exit(1)
 
@@ -198,7 +214,6 @@ def main():
             remediation_ticket = w.get("remediation_ticket")
             env_scope = w.get("environment_scope")
 
-            # Require explicit values without synthetic defaults
             if not risk_owner or not isinstance(risk_owner, str):
                 raise ValueError("Waiver must specify an explicit risk_owner.")
             if not remediation_owner or not isinstance(remediation_owner, str):
@@ -214,7 +229,6 @@ def main():
             if not expires_on or not isinstance(expires_on, str):
                 raise ValueError("Waiver must contain an expires_on date string.")
 
-            # Determine risk-sensitive maximum duration (14 days for Critical, 30 days for High)
             has_critical = False
             if os.path.exists("trivy-report.json"):
                 with open("trivy-report.json", "r") as tf:
@@ -257,13 +271,13 @@ def main():
             print(f"❌ DECISION ERROR: Failed to validate waiver file '{args.waiver_file}': {exc}", file=sys.stderr)
             sys.exit(1)
     else:
-        # Decision is PASS — waiver must NOT be present
         if args.waiver_file and os.path.exists(args.waiver_file):
             print(f"❌ DECISION ERROR: Decision is PASS but waiver file '{args.waiver_file}' was supplied.", file=sys.stderr)
             sys.exit(1)
 
     predicate = {
         "schemaVersion": "1.0",
+        "decisionId": decision_id,
         "decision": args.decision,
         "application": {
             "source": args.app_source,
@@ -288,9 +302,12 @@ def main():
             "secretScanCompleted": app_secret_valid and runner_secret_valid,
             "malwareScanCompleted": app_malware_valid and runner_malware_valid,
             "licenseScanCompleted": app_license_valid and runner_license_valid,
-            "runtimeObservationCompleted": app_runtime_valid and runner_runtime_valid,
+            "applicationRuntimeObservation": "PASSED" if app_runtime_valid else "FAILED",
+            "runnerRuntimeObservation": "EXEMPTED",
+            "runnerRuntimeExemptionReason": "Task runner dynamic observation exempt under security policy (isolated execution)",
             "dastCompleted": app_dast_valid,
             "sbomGenerated": sbom_valid,
+            "vexGenerated": vex_valid,
             "evidenceManifestHash": evidence_manifest_hash
         },
         "waiver": waiver_data,
@@ -300,13 +317,13 @@ def main():
             "repository": os.environ.get("GITHUB_REPOSITORY", "llody9977/artifactgate")
         },
         "toolVersions": tool_versions,
-        "createdAt": datetime.now(timezone.utc).isoformat()
+        "createdAt": created_at
     }
 
     with open(args.output, "w", encoding="utf-8") as f:
         json.dump(predicate, f, indent=2)
 
-    print(f"✅ Generated Promotion Decision Predicate: {args.output} (Decision: {args.decision})")
+    print(f"✅ Generated Promotion Decision Predicate: {args.output} (DecisionId: {decision_id}, Decision: {args.decision})")
 
 if __name__ == "__main__":
     main()

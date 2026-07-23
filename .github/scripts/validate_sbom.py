@@ -53,16 +53,27 @@ def validate_sbom(sbom_path, target_digest=None, min_package_count=10):
         if clean_digest in doc_namespace.lower():
             digest_bound = True
 
-        # Check root packages & external references / checksums / comments
+        # Check packages checksums, externalRefs, or metadata
         packages = data.get("packages", [])
         for pkg in packages:
-            pkg_str = json.dumps(pkg).lower()
-            if clean_digest in pkg_str:
+            checksums = pkg.get("checksums", [])
+            for c in checksums:
+                c_val = str(c.get("checksumValue", "")).lower()
+                if clean_digest in c_val:
+                    digest_bound = True
+                    break
+            ext_refs = pkg.get("externalRefs", [])
+            for ref in ext_refs:
+                ref_loc = str(ref.get("referenceLocator", "")).lower()
+                if clean_digest in ref_loc:
+                    digest_bound = True
+                    break
+            if clean_digest in json.dumps(pkg).lower():
                 digest_bound = True
                 break
 
         if not digest_bound:
-            print(f"❌ SBOM ERROR: Subject image digest '{clean_digest}' is not bound to document namespace or package metadata in '{sbom_path}'.", file=sys.stderr)
+            print(f"❌ SBOM ERROR: Subject image digest '{clean_digest}' is not bound to document namespace or package checksum/externalRef metadata in '{sbom_path}'.", file=sys.stderr)
             return False
 
     # 4. Check Package Array & Thresholds

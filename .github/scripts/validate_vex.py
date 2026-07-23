@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 OpenVEX Semantic Attestation Validator
-Validates OpenVEX documents for schema compliance, product digest binding, valid statement status, vulnerability identifiers, and non-expired statements.
+Validates OpenVEX documents for schema compliance, product digest binding, valid statement status, approved justifications for not_affected, and conflict-free statements.
 """
 
 import sys
@@ -9,6 +9,14 @@ import json
 import os
 
 VALID_STATUSES = {"not_affected", "affected", "fixed", "under_investigation"}
+VALID_JUSTIFICATIONS = {
+    "code_not_present",
+    "code_not_reachable",
+    "vulnerable_code_not_in_execute_path",
+    "vulnerable_code_not_present",
+    "vulnerable_code_cannot_be_controlled_by_adversary",
+    "inline_mitigations_already_exist"
+}
 
 def validate_vex(vex_path, expected_digest=None):
     if not os.path.exists(vex_path):
@@ -40,6 +48,8 @@ def validate_vex(vex_path, expected_digest=None):
     if expected_digest:
         clean_target_digest = expected_digest.split("@")[-1].replace("sha256:", "").strip().lower()
 
+    seen_vuln_statuses = {}
+
     for idx, stmt in enumerate(statements):
         status = stmt.get("status")
         if status not in VALID_STATUSES:
@@ -51,6 +61,22 @@ def validate_vex(vex_path, expected_digest=None):
         if not vuln_id:
             print(f"❌ VEX ERROR: Statement [{idx}] is missing a vulnerability identifier in '{vex_path}'.", file=sys.stderr)
             return False
+
+        # Justification check for not_affected
+        if status == "not_affected":
+            justification = stmt.get("justification")
+            if not justification or justification not in VALID_JUSTIFICATIONS:
+                print(f"❌ VEX ERROR: Statement [{idx}] for '{vuln_id}' status 'not_affected' missing valid justification. Got '{justification}'. Expected one of {VALID_JUSTIFICATIONS}.", file=sys.stderr)
+                return False
+
+        # Conflict checking
+        if vuln_id in seen_vuln_statuses:
+            prev_status = seen_vuln_statuses[vuln_id]
+            if prev_status != status:
+                print(f"❌ VEX ERROR: Statement [{idx}] for '{vuln_id}' status '{status}' conflicts with previous statement status '{prev_status}' in '{vex_path}'.", file=sys.stderr)
+                return False
+        else:
+            seen_vuln_statuses[vuln_id] = status
 
         products = stmt.get("products", [])
         if not isinstance(products, list) or len(products) == 0:
