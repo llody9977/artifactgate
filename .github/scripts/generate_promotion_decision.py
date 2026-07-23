@@ -28,22 +28,44 @@ def hash_file(filepath):
     info = file_info(filepath)
     return info["sha256"] if info else None
 
-def validate_result_file(filepath, expected_digest=None):
+def validate_result_file(filepath, expected_digest, expected_role):
     if not os.path.exists(filepath):
         print(f"❌ DECISION ERROR: Required scan result file '{filepath}' is missing.", file=sys.stderr)
         return False
     try:
         with open(filepath, "r", encoding="utf-8") as f:
             data = json.load(f)
+
+        if data.get("schemaVersion") != "1.0":
+            print(f"❌ DECISION ERROR: Scan result file '{filepath}' schemaVersion is '{data.get('schemaVersion')}' (expected '1.0').", file=sys.stderr)
+            return False
+
         status = data.get("status")
         if status != "PASSED":
             print(f"❌ DECISION ERROR: Scan result file '{filepath}' status is '{status}' (expected 'PASSED').", file=sys.stderr)
             return False
-        if expected_digest:
-            subj = data.get("subject_digest")
-            if subj and subj != expected_digest:
-                print(f"❌ DECISION ERROR: Scan result file '{filepath}' subject digest '{subj}' does not match expected '{expected_digest}'.", file=sys.stderr)
-                return False
+
+        subject = data.get("subject", {})
+        subj_digest = subject.get("digest")
+        subj_role = subject.get("role")
+
+        if subj_digest != expected_digest:
+            print(f"❌ DECISION ERROR: Scan result file '{filepath}' subject digest '{subj_digest}' does not match expected '{expected_digest}'.", file=sys.stderr)
+            return False
+
+        if subj_role != expected_role:
+            print(f"❌ DECISION ERROR: Scan result file '{filepath}' subject role '{subj_role}' does not match expected '{expected_role}'.", file=sys.stderr)
+            return False
+
+        scanner = data.get("scanner", {})
+        if not scanner.get("name") or not scanner.get("version"):
+            print(f"❌ DECISION ERROR: Scan result file '{filepath}' is missing scanner metadata.", file=sys.stderr)
+            return False
+
+        if not data.get("startedAt") or not data.get("completedAt"):
+            print(f"❌ DECISION ERROR: Scan result file '{filepath}' is missing execution timestamps.", file=sys.stderr)
+            return False
+
         return True
     except Exception as exc:
         print(f"❌ DECISION ERROR: Failed to parse scan result file '{filepath}': {exc}", file=sys.stderr)
@@ -87,42 +109,55 @@ def main():
         print(f"❌ DECISION ERROR: Invalid tool versions file '{args.tool_versions_file}': {exc}", file=sys.stderr)
         sys.exit(1)
 
-    # Validate Scan Result Files Content
-    secret_valid = validate_result_file("secret-scan-result.json", args.app_source_digest)
-    malware_valid = validate_result_file("malware-scan-result.json", args.app_source_digest)
-    license_valid = validate_result_file("license-scan-result.json", args.app_source_digest)
-    dast_valid = validate_result_file("dast-result.json", args.app_source_digest)
-    runtime_valid = validate_result_file("runtime-result.json", args.app_source_digest)
-    vuln_report_valid = os.path.exists("trivy-report.json")
+    # Strict Per-Image Result File Validation
+    app_secret_valid = validate_result_file("app-secret-scan-result.json", args.app_source_digest, "application")
+    runner_secret_valid = validate_result_file("runner-secret-scan-result.json", args.runner_source_digest, "runner")
+    app_malware_valid = validate_result_file("app-malware-scan-result.json", args.app_source_digest, "application")
+    runner_malware_valid = validate_result_file("runner-malware-scan-result.json", args.runner_source_digest, "runner")
+    app_license_valid = validate_result_file("app-license-scan-result.json", args.app_source_digest, "application")
+    runner_license_valid = validate_result_file("runner-license-scan-result.json", args.runner_source_digest, "runner")
+    app_dast_valid = validate_result_file("app-dast-result.json", args.app_source_digest, "application")
+    app_runtime_valid = validate_result_file("app-runtime-result.json", args.app_source_digest, "application")
+    runner_runtime_valid = validate_result_file("runner-runtime-result.json", args.runner_source_digest, "runner")
+
+    vuln_report_valid = os.path.exists("trivy-report.json") and os.path.exists("trivy-report.runner.json")
     sbom_valid = os.path.exists("sbom.spdx.json") and os.path.exists("runner-sbom.spdx.json")
 
-    if args.decision == "PASS":
-        if not (secret_valid and malware_valid and license_valid and dast_valid and runtime_valid and vuln_report_valid and sbom_valid):
-            print("❌ DECISION ERROR: Decision is PASS but one or more required scan evidence files are invalid or missing.", file=sys.stderr)
-            sys.exit(1)
-
-    # Structured Evidence Manifest
-    evidence_files = [
+    # Mandatory Named Evidence Set Completeness
+    mandatory_evidence_files = [
+        "app-secret-scan-result.json",
+        "runner-secret-scan-result.json",
+        "app-malware-scan-result.json",
+        "runner-malware-scan-result.json",
+        "app-license-scan-result.json",
+        "runner-license-scan-result.json",
+        "app-dast-result.json",
+        "app-runtime-result.json",
+        "runner-runtime-result.json",
         "trivy-report.json",
+        "trivy-report.runner.json",
         "sbom.spdx.json",
         "runner-sbom.spdx.json",
         "vex.json",
-        "vendor-sig-check.txt",
-        "secret-scan-result.json",
-        "malware-scan-result.json",
-        "license-scan-result.json",
-        "dast-result.json",
-        "runtime-result.json"
+        "vendor-sig-check.txt"
     ]
+
+    for req_file in mandatory_evidence_files:
+        if not os.path.exists(req_file):
+            print(f"❌ DECISION ERROR: Mandatory evidence file '{req_file}' is missing from workspace.", file=sys.stderr)
+            sys.exit(1)
+
+    if args.decision == "PASS":
+        if not (app_secret_valid and runner_secret_valid and app_malware_valid and runner_malware_valid and app_license_valid and runner_license_valid and app_dast_valid and app_runtime_valid and runner_runtime_valid and vuln_report_valid and sbom_valid):
+            print("❌ DECISION ERROR: Decision is PASS but one or more required scan evidence files failed validation.", file=sys.stderr)
+            sys.exit(1)
+
+    # Structured Evidence Manifest
     manifest_entries = []
-    for fpath in sorted(evidence_files):
+    for fpath in sorted(mandatory_evidence_files):
         info = file_info(fpath)
         if info:
             manifest_entries.append(info)
-
-    if len(manifest_entries) < 6:
-        print("❌ DECISION ERROR: Evidence manifest is incomplete (fewer than 6 required evidence files).", file=sys.stderr)
-        sys.exit(1)
 
     manifest_doc = {"files": manifest_entries}
     manifest_json_bytes = json.dumps(manifest_doc, sort_keys=True).encode("utf-8")
@@ -131,7 +166,7 @@ def main():
     with open("evidence-manifest.json", "w", encoding="utf-8") as f:
         f.write(json.dumps(manifest_doc, indent=2, sort_keys=True))
 
-    # Fail Closed Waiver & Duration Validation
+    # Fail Closed Waiver Validation (No synthetic defaults)
     waiver_data = {
         "present": False,
         "approvedBy": None,
@@ -158,10 +193,20 @@ def main():
             expires_on = w.get("expires_on")
             reviewer = w.get("reviewer")
             justification = w.get("justification")
-            risk_owner = w.get("risk_owner", reviewer)
-            remediation_owner = w.get("remediation_owner", reviewer)
-            remediation_ticket = w.get("remediation_ticket", "SEC-WAIVER-AUTO")
-            env_scope = w.get("environment_scope", "production")
+            risk_owner = w.get("risk_owner")
+            remediation_owner = w.get("remediation_owner")
+            remediation_ticket = w.get("remediation_ticket")
+            env_scope = w.get("environment_scope")
+
+            # Require explicit values without synthetic defaults
+            if not risk_owner or not isinstance(risk_owner, str):
+                raise ValueError("Waiver must specify an explicit risk_owner.")
+            if not remediation_owner or not isinstance(remediation_owner, str):
+                raise ValueError("Waiver must specify an explicit remediation_owner.")
+            if not remediation_ticket or not isinstance(remediation_ticket, str):
+                raise ValueError("Waiver must specify an explicit remediation_ticket.")
+            if not env_scope or not isinstance(env_scope, str):
+                raise ValueError("Waiver must specify an explicit environment_scope.")
 
             if not accepted_cves or not isinstance(accepted_cves, list) or len(accepted_cves) == 0:
                 raise ValueError("Waiver must contain a non-empty accepted_cves list.")
@@ -169,15 +214,27 @@ def main():
             if not expires_on or not isinstance(expires_on, str):
                 raise ValueError("Waiver must contain an expires_on date string.")
 
-            # Validate future expiry and enforce 14-day duration limit for Critical CVEs
+            # Determine risk-sensitive maximum duration (14 days for Critical, 30 days for High)
+            has_critical = False
+            if os.path.exists("trivy-report.json"):
+                with open("trivy-report.json", "r") as tf:
+                    rep = json.load(tf)
+                    for res in rep.get("Results", []):
+                        for vuln in res.get("Vulnerabilities", []):
+                            if vuln.get("VulnerabilityID") in accepted_cves and vuln.get("Severity") == "CRITICAL":
+                                has_critical = True
+                                break
+
+            max_allowed_days = 14 if has_critical else 30
             exp_date = datetime.strptime(expires_on, "%Y-%m-%d").replace(tzinfo=timezone.utc)
             now_dt = datetime.now(timezone.utc)
+
             if exp_date <= now_dt:
                 raise ValueError(f"Waiver expiration date '{expires_on}' is in the past or expired.")
 
             days_valid = (exp_date - now_dt).days
-            if days_valid > 30:
-                raise ValueError(f"Waiver duration ({days_valid} days) exceeds maximum policy limit of 30 days.")
+            if days_valid > max_allowed_days:
+                raise ValueError(f"Waiver duration ({days_valid} days) exceeds maximum policy limit of {max_allowed_days} days for this risk tier.")
 
             if not reviewer or not isinstance(reviewer, str):
                 raise ValueError("Waiver must specify a reviewer.")
@@ -228,11 +285,11 @@ def main():
         },
         "evidence": {
             "vulnerabilityScanCompleted": vuln_report_valid,
-            "secretScanCompleted": secret_valid,
-            "malwareScanCompleted": malware_valid,
-            "licenseScanCompleted": license_valid,
-            "runtimeObservationCompleted": runtime_valid,
-            "dastCompleted": dast_valid,
+            "secretScanCompleted": app_secret_valid and runner_secret_valid,
+            "malwareScanCompleted": app_malware_valid and runner_malware_valid,
+            "licenseScanCompleted": app_license_valid and runner_license_valid,
+            "runtimeObservationCompleted": app_runtime_valid and runner_runtime_valid,
+            "dastCompleted": app_dast_valid,
             "sbomGenerated": sbom_valid,
             "evidenceManifestHash": evidence_manifest_hash
         },
