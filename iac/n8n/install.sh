@@ -275,8 +275,24 @@ else
         cosign verify --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_IMAGE}@${GHCR_DIGEST}" >/dev/null 2>&1 && APP_SIG_VERIFIED=true
         cosign verify --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" >/dev/null 2>&1 && RUNNER_SIG_VERIFIED=true
 
-        cosign verify-attestation --type openvex --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_IMAGE}@${GHCR_DIGEST}" >/dev/null 2>&1 && APP_VEX_VERIFIED=true
-        cosign verify-attestation --type openvex --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" >/dev/null 2>&1 && RUNNER_VEX_VERIFIED=true
+        # Semantic OpenVEX Validation
+        APP_VEX_RAW=$(cosign verify-attestation --type openvex --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_IMAGE}@${GHCR_DIGEST}" 2>/dev/null || true)
+        if [ -n "$APP_VEX_RAW" ]; then
+            echo "$APP_VEX_RAW" | jq -r 'if type == "array" then .[0].payload else .payload end' | base64 -d 2>/dev/null | jq -r '.predicate // empty' > /tmp/app-vex.json 2>/dev/null || true
+            if [ -s /tmp/app-vex.json ]; then
+                python3 .github/scripts/validate_vex.py /tmp/app-vex.json "$GHCR_DIGEST" >/dev/null 2>&1 && APP_VEX_VERIFIED=true
+                rm -f /tmp/app-vex.json
+            fi
+        fi
+
+        RUNNER_VEX_RAW=$(cosign verify-attestation --type openvex --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" 2>/dev/null || true)
+        if [ -n "$RUNNER_VEX_RAW" ]; then
+            echo "$RUNNER_VEX_RAW" | jq -r 'if type == "array" then .[0].payload else .payload end' | base64 -d 2>/dev/null | jq -r '.predicate // empty' > /tmp/runner-vex.json 2>/dev/null || true
+            if [ -s /tmp/runner-vex.json ]; then
+                python3 .github/scripts/validate_vex.py /tmp/runner-vex.json "$RUNNER_GHCR_DIGEST" >/dev/null 2>&1 && RUNNER_VEX_VERIFIED=true
+                rm -f /tmp/runner-vex.json
+            fi
+        fi
 
         (cosign verify-attestation --type slsaprovenance --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_IMAGE}@${GHCR_DIGEST}" >/dev/null 2>&1 || \
          cosign verify-attestation --type https://slsa.dev/provenance/v1 --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_IMAGE}@${GHCR_DIGEST}" >/dev/null 2>&1) && APP_PROV_VERIFIED=true
@@ -292,38 +308,48 @@ else
          cosign verify-attestation --type spdx --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" >/dev/null 2>&1 || \
          cosign verify-attestation --type https://spdx.dev/Document --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" >/dev/null 2>&1) && RUNNER_SBOM_VERIFIED=true
 
-        # Verify Promotion Decision Attestation for App using dedicated semantic validator
+        # Verify Promotion Decision Attestation for App (Iterating through attestation array entry-by-entry)
         APP_DEC_RAW=$(cosign verify-attestation --type promotiondecision --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_IMAGE}@${GHCR_DIGEST}" 2>/dev/null || true)
         if [ -n "$APP_DEC_RAW" ]; then
-            echo "$APP_DEC_RAW" | jq -r 'if type == "array" then .[] else . end | select(.payload != null) | .payload' | base64 -d 2>/dev/null | jq -r '.predicate // empty' > /tmp/app-predicate.json 2>/dev/null || true
-            if [ -s /tmp/app-predicate.json ]; then
-                if python3 .github/scripts/validate_promotion_decision.py \
-                    --predicate-file /tmp/app-predicate.json \
-                    --expected-app-promoted-digest "$GHCR_DIGEST" \
-                    --expected-runner-promoted-digest "$RUNNER_GHCR_DIGEST" \
-                    --expected-repository "$REPO_SLUG" \
-                    --expected-platform "linux/amd64" >/dev/null 2>&1; then
-                    APP_DECISION_VERIFIED=true
+            ARR_LEN=$(echo "$APP_DEC_RAW" | jq -r 'if type == "array" then length else 1 end' 2>/dev/null || echo 1)
+            for idx in $(seq 0 $((ARR_LEN-1))); do
+                echo "$APP_DEC_RAW" | jq -r "if type == \"array\" then .[$idx].payload else .payload end" | base64 -d 2>/dev/null | jq -r '.predicate // empty' > /tmp/app-predicate.json 2>/dev/null || true
+                if [ -s /tmp/app-predicate.json ]; then
+                    if python3 .github/scripts/validate_promotion_decision.py \
+                        --predicate-file /tmp/app-predicate.json \
+                        --expected-app-promoted-digest "$GHCR_DIGEST" \
+                        --expected-runner-promoted-digest "$RUNNER_GHCR_DIGEST" \
+                        --expected-repository "$REPO_SLUG" \
+                        --expected-platform "linux/amd64"; then
+                        APP_DECISION_VERIFIED=true
+                        rm -f /tmp/app-predicate.json
+                        break
+                    fi
+                    rm -f /tmp/app-predicate.json
                 fi
-                rm -f /tmp/app-predicate.json
-            fi
+            done
         fi
 
-        # Verify Promotion Decision Attestation for Runner using dedicated semantic validator
+        # Verify Promotion Decision Attestation for Runner (Iterating through attestation array entry-by-entry)
         RUNNER_DEC_RAW=$(cosign verify-attestation --type promotiondecision --certificate-identity="$COSIGN_IDENTITY" --certificate-oidc-issuer="$COSIGN_ISSUER" "${GHCR_RUNNER_IMAGE}@${RUNNER_GHCR_DIGEST}" 2>/dev/null || true)
         if [ -n "$RUNNER_DEC_RAW" ]; then
-            echo "$RUNNER_DEC_RAW" | jq -r 'if type == "array" then .[] else . end | select(.payload != null) | .payload' | base64 -d 2>/dev/null | jq -r '.predicate // empty' > /tmp/runner-predicate.json 2>/dev/null || true
-            if [ -s /tmp/runner-predicate.json ]; then
-                if python3 .github/scripts/validate_promotion_decision.py \
-                    --predicate-file /tmp/runner-predicate.json \
-                    --expected-app-promoted-digest "$GHCR_DIGEST" \
-                    --expected-runner-promoted-digest "$RUNNER_GHCR_DIGEST" \
-                    --expected-repository "$REPO_SLUG" \
-                    --expected-platform "linux/amd64" >/dev/null 2>&1; then
-                    RUNNER_DECISION_VERIFIED=true
+            ARR_LEN=$(echo "$RUNNER_DEC_RAW" | jq -r 'if type == "array" then length else 1 end' 2>/dev/null || echo 1)
+            for idx in $(seq 0 $((ARR_LEN-1))); do
+                echo "$RUNNER_DEC_RAW" | jq -r "if type == \"array\" then .[$idx].payload else .payload end" | base64 -d 2>/dev/null | jq -r '.predicate // empty' > /tmp/runner-predicate.json 2>/dev/null || true
+                if [ -s /tmp/runner-predicate.json ]; then
+                    if python3 .github/scripts/validate_promotion_decision.py \
+                        --predicate-file /tmp/runner-predicate.json \
+                        --expected-app-promoted-digest "$GHCR_DIGEST" \
+                        --expected-runner-promoted-digest "$RUNNER_GHCR_DIGEST" \
+                        --expected-repository "$REPO_SLUG" \
+                        --expected-platform "linux/amd64"; then
+                        RUNNER_DECISION_VERIFIED=true
+                        rm -f /tmp/runner-predicate.json
+                        break
+                    fi
+                    rm -f /tmp/runner-predicate.json
                 fi
-                rm -f /tmp/runner-predicate.json
-            fi
+            done
         fi
     fi
     

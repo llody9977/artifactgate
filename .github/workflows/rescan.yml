@@ -31,9 +31,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y wget apt-transport-https gnupg lsb-release jq
-          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo gpg --dearmor -o /usr/share/keyrings/trivy.gpg
-          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
-          sudo apt-get update && sudo apt-get install -y trivy
+          # Install Cosign
+          COSIGN_VERSION=v2.4.1
+          curl --fail --show-error --location --retry 3 -o cosign "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign-linux-amd64"
+          sudo install -m 755 cosign /usr/local/bin/cosign
+          # Install Trivy (Pinned v0.58.2)
+          TRIVY_VERSION=0.58.2
+          curl --fail --show-error --location --retry 3 -o trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          tar -xzf trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz trivy
+          sudo install -m 755 trivy /usr/local/bin/trivy
 
       - name: Log in to GHCR
         uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
@@ -108,15 +114,17 @@ jobs:
           IMAGE="ghcr.io/${{ github.repository }}/n8n-trusted:$VERSION"
           RUNNER_IMAGE="ghcr.io/${{ github.repository }}/n8n-runners-trusted:$VERSION"
 
-          # Attempt to resolve immutable digests from signed decision predicate
-          if gh release download "$LATEST_TAG" --repo "${{ github.repository }}" \
-               --pattern promotion-decision.json --dir "waiver-$VERSION" 2>/dev/null; then
-            APP_DIG=$(jq -r '.application.promotedDigest // empty' "waiver-$VERSION/promotion-decision.json")
-            RUN_DIG=$(jq -r '.runner.promotedDigest // empty' "waiver-$VERSION/promotion-decision.json")
+          # Extract immutable digests directly from verified OCI decision attestation
+          COSIGN_ID="https://github.com/${{ github.repository }}/.github/workflows/image-promotion.yml@refs/heads/main"
+          COSIGN_ISS="https://token.actions.githubusercontent.com"
+          APP_DEC_RAW=$(cosign verify-attestation --type promotiondecision --certificate-identity="$COSIGN_ID" --certificate-oidc-issuer="$COSIGN_ISS" "$IMAGE" 2>/dev/null || true)
+          if [ -n "$APP_DEC_RAW" ]; then
+            APP_DIG=$(echo "$APP_DEC_RAW" | jq -r 'if type=="array" then .[0].payload else .payload end' | base64 -d 2>/dev/null | jq -r '.predicate.application.promotedDigest // empty')
+            RUN_DIG=$(echo "$APP_DEC_RAW" | jq -r 'if type=="array" then .[0].payload else .payload end' | base64 -d 2>/dev/null | jq -r '.predicate.runner.promotedDigest // empty')
             if [ -n "$APP_DIG" ] && [ -n "$RUN_DIG" ]; then
               IMAGE="ghcr.io/${{ github.repository }}/n8n-trusted@$APP_DIG"
               RUNNER_IMAGE="ghcr.io/${{ github.repository }}/n8n-runners-trusted@$RUN_DIG"
-              echo "✅ Resolved immutable digests from signed promotion decision: $APP_DIG"
+              echo "✅ Resolved immutable digests from OCI decision attestation: $APP_DIG"
             fi
           fi
 
