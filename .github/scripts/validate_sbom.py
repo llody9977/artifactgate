@@ -44,7 +44,7 @@ def validate_sbom(sbom_path, target_digest=None, min_package_count=10):
         print(f"❌ SBOM ERROR: Missing creationInfo creators metadata in '{sbom_path}'.", file=sys.stderr)
         return False
 
-    # 3. Structured Target Digest Binding
+    # 3. Structured Target Digest Binding (Strict SPDX Fields)
     if target_digest:
         clean_digest = target_digest.split("@")[-1].replace("sha256:", "").strip().lower()
         digest_bound = False
@@ -53,7 +53,7 @@ def validate_sbom(sbom_path, target_digest=None, min_package_count=10):
         if clean_digest in doc_namespace.lower():
             digest_bound = True
 
-        # Check packages checksums, externalRefs, or metadata
+        # Check packages checksums or externalRefs structurally
         packages = data.get("packages", [])
         for pkg in packages:
             checksums = pkg.get("checksums", [])
@@ -68,13 +68,13 @@ def validate_sbom(sbom_path, target_digest=None, min_package_count=10):
                 if clean_digest in ref_loc:
                     digest_bound = True
                     break
-            if clean_digest in json.dumps(pkg).lower():
-                digest_bound = True
+            if digest_bound:
                 break
 
         if not digest_bound:
             print(f"❌ SBOM ERROR: Subject image digest '{clean_digest}' is not bound to document namespace or package checksum/externalRef metadata in '{sbom_path}'.", file=sys.stderr)
             return False
+
 
     # 4. Check Package Array & Thresholds
     packages = data.get("packages")

@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ArtifactGate Normalized Evidence Schema",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "artifact",
+    "context",
+    "evidence",
+    "exceptions"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "artifact": {
+      "type": "object",
+      "required": ["application", "runner", "platform"],
+      "properties": {
+        "application": {
+          "type": "object",
+          "required": ["source", "sourceDigest", "promotedDigest"],
+          "properties": {
+            "source": { "type": "string" },
+            "sourceDigest": { "type": "string" },
+            "promotedDigest": { "type": "string" }
+          }
+        },
+        "runner": {
+          "type": "object",
+          "required": ["source", "sourceDigest", "promotedDigest"],
+          "properties": {
+            "source": { "type": "string" },
+            "sourceDigest": { "type": "string" },
+            "promotedDigest": { "type": "string" }
+          }
+        },
+        "platform": { "type": "string", "const": "linux/amd64" }
+      }
+    },
+    "context": {
+      "type": "object",
+      "required": ["environment", "workflowRunId", "repository"],
+      "properties": {
+        "environment": { "type": "string" },
+        "workflowRunId": { "type": "string" },
+        "repository": { "type": "string" }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "required": [
+        "vulnerabilities",
+        "licenses",
+        "secrets",
+        "malware",
+        "sbom",
+        "runtime",
+        "scanner_status"
+      ],
+      "properties": {
+        "vulnerabilities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "severity"],
+            "properties": {
+              "id": { "type": "string" },
+              "severity": { "type": "string" },
+              "in_kev": { "type": "boolean" },
+              "epss": { "type": "number" },
+              "age_days": { "type": "number" },
+              "vector": { "type": "string" },
+              "pkg_name": { "type": "string" }
+            }
+          }
+        },
+        "licenses": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["component", "license_id"],
+            "properties": {
+              "component": { "type": "string" },
+              "license_id": { "type": "string" }
+            }
+          }
+        },
+        "secrets": {
+          "type": "array"
+        },
+        "malware": {
+          "type": "array"
+        },
+        "sbom": {
+          "type": "object",
+          "required": ["application_generated", "runner_generated"]
+        },
+        "runtime": {
+          "type": "object",
+          "required": ["app_status", "runner_status"]
+        },
+        "scanner_status": {
+          "type": "object"
+        }
+      }
+    },
+    "exceptions": {
+      "type": "array"
+    }
+  }
+}

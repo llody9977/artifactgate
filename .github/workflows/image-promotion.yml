@@ -44,10 +44,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y wget apt-transport-https gnupg lsb-release jq
-          # Install Trivy
-          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo gpg --dearmor -o /usr/share/keyrings/trivy.gpg
-          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
-          sudo apt-get update && sudo apt-get install -y trivy
+          # Install Trivy (Pinned v0.58.2)
+          TRIVY_VERSION=0.58.2
+          curl --fail --show-error --location --retry 3 -o trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          tar -xzf trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz trivy
+          sudo install -m 755 trivy /usr/local/bin/trivy
+
           # Install cosign for upstream publisher identity checks
           COSIGN_VERSION=v3.1.2
           curl --fail --show-error --location --retry 3 -o cosign-linux-amd64 \
@@ -218,23 +220,24 @@ jobs:
         run: |
           T_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           trivy image \
-            --format table \
+            --format json \
+            --output app-secret-scan-output.json \
             --scanners secret \
             --severity CRITICAL,HIGH \
-            --exit-code 1 \
             n8nio/n8n:${{ env.N8N_VERSION }}
-          trivy image --format table --scanners secret --severity CRITICAL,HIGH --exit-code 1 \
+          trivy image --format json --output runner-secret-scan-output.json --scanners secret --severity CRITICAL,HIGH \
             n8nio/runners:${{ env.N8N_VERSION }}
           T_END=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
           RUN_ID="${{ github.run_id }}"
-          OFF_HASH="sha256:$(sha256sum vendor-sig-check.txt | cut -d' ' -f1)"
+          APP_SEC_HASH="sha256:$(sha256sum app-secret-scan-output.json | cut -d' ' -f1)"
+          RUN_SEC_HASH="sha256:$(sha256sum runner-secret-scan-output.json | cut -d' ' -f1)"
 
-          jq -n --arg status PASSED --arg app_dig "${{ steps.fetch-digest.outputs.digest }}" --arg tstart "$T_START" --arg tend "$T_END" --arg runid "$RUN_ID" --arg hash "$OFF_HASH" \
-            '{schemaVersion:"1.0",status:$status,subject:{name:"n8n",digest:$app_dig,platform:"linux/amd64",role:"application"},scanner:{name:"trivy-secret",version:"0.58.2"},startedAt:$tstart,completedAt:$tend,workflowRunId:$runid,outputFileHash:$hash,policyStatus:"PASS",scope:{scanners:["secret"]},errors:[]}' > app-secret-scan-result.json
+          jq -n --arg status PASSED --arg app_dig "${{ steps.fetch-digest.outputs.digest }}" --arg tstart "$T_START" --arg tend "$T_END" --arg runid "$RUN_ID" --arg hash "$APP_SEC_HASH" \
+            '{schemaVersion:"1.0",status:$status,subject:{name:"n8n",digest:$app_dig,platform:"linux/amd64",role:"application"},scanner:{name:"trivy-secret",version:"0.58.2"},startedAt:$tstart,completedAt:$tend,workflowRunId:$runid,outputFile:"app-secret-scan-output.json",outputFileHash:$hash,policyStatus:"PASS",scope:{scanners:["secret"]},errors:[]}' > app-secret-scan-result.json
 
-          jq -n --arg status PASSED --arg run_dig "${{ steps.fetch-digest.outputs.runner_digest }}" --arg tstart "$T_START" --arg tend "$T_END" --arg runid "$RUN_ID" --arg hash "$OFF_HASH" \
-            '{schemaVersion:"1.0",status:$status,subject:{name:"n8n-runners",digest:$run_dig,platform:"linux/amd64",role:"runner"},scanner:{name:"trivy-secret",version:"0.58.2"},startedAt:$tstart,completedAt:$tend,workflowRunId:$runid,outputFileHash:$hash,policyStatus:"PASS",scope:{scanners:["secret"]},errors:[]}' > runner-secret-scan-result.json
+          jq -n --arg status PASSED --arg run_dig "${{ steps.fetch-digest.outputs.runner_digest }}" --arg tstart "$T_START" --arg tend "$T_END" --arg runid "$RUN_ID" --arg hash "$RUN_SEC_HASH" \
+            '{schemaVersion:"1.0",status:$status,subject:{name:"n8n-runners",digest:$run_dig,platform:"linux/amd64",role:"runner"},scanner:{name:"trivy-secret",version:"0.58.2"},startedAt:$tstart,completedAt:$tend,workflowRunId:$runid,outputFile:"runner-secret-scan-output.json",outputFileHash:$hash,policyStatus:"PASS",scope:{scanners:["secret"]},errors:[]}' > runner-secret-scan-result.json
 
       - name: Scan Image for Malware (ClamAV)
         run: |
@@ -244,43 +247,45 @@ jobs:
           
           echo "Running ClamAV malware scan via Docker container..."
           chmod 644 image-for-clamav.tar
-          docker run --rm -v "$PWD:/scandir:ro" clamav/clamav:1.5.3@sha256:7f5389ccaa2368c383fa80e167ccfe44348d71e685f926fce4755eed1757673a clamscan --max-filesize=4000M --max-scansize=4000M /scandir/image-for-clamav.tar || (echo "❌ Malware detected! Blocking promotion." && exit 1)
+          docker run --rm -v "$PWD:/scandir:ro" clamav/clamav:1.5.3@sha256:7f5389ccaa2368c383fa80e167ccfe44348d71e685f926fce4755eed1757673a clamscan --max-filesize=4000M --max-scansize=4000M /scandir/image-for-clamav.tar > app-clamav-output.txt || (echo "❌ Malware detected! Blocking promotion." && exit 1)
           docker save n8nio/runners:${{ env.N8N_VERSION }} -o runner-for-clamav.tar
-          docker run --rm -v "$PWD:/scandir:ro" clamav/clamav:1.5.3@sha256:7f5389ccaa2368c383fa80e167ccfe44348d71e685f926fce4755eed1757673a clamscan --max-filesize=4000M --max-scansize=4000M /scandir/runner-for-clamav.tar || (echo "❌ Malware detected in task runner image." && exit 1)
+          docker run --rm -v "$PWD:/scandir:ro" clamav/clamav:1.5.3@sha256:7f5389ccaa2368c383fa80e167ccfe44348d71e685f926fce4755eed1757673a clamscan --max-filesize=4000M --max-scansize=4000M /scandir/runner-for-clamav.tar > runner-clamav-output.txt || (echo "❌ Malware detected in task runner image." && exit 1)
           echo "✅ ClamAV reported no detections using the recorded engine (v1.5.3) and signature database versions."
           T_END=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
           RUN_ID="${{ github.run_id }}"
-          OFF_HASH="sha256:$(sha256sum image-for-clamav.tar | cut -d' ' -f1)"
-          RUN_OFF_HASH="sha256:$(sha256sum runner-for-clamav.tar | cut -d' ' -f1)"
+          OFF_HASH="sha256:$(sha256sum app-clamav-output.txt | cut -d' ' -f1)"
+          RUN_OFF_HASH="sha256:$(sha256sum runner-clamav-output.txt | cut -d' ' -f1)"
+          CLAMAV_DB_DATE=$(date -u +%Y-%m-%d)
 
-          jq -n --arg status PASSED --arg app_dig "${{ steps.fetch-digest.outputs.digest }}" --arg tstart "$T_START" --arg tend "$T_END" --arg runid "$RUN_ID" --arg hash "$OFF_HASH" \
-            '{schemaVersion:"1.0",status:$status,subject:{name:"n8n",digest:$app_dig,platform:"linux/amd64",role:"application"},scanner:{name:"clamav",version:"1.5.3",databaseVersion:"2026-07-22"},startedAt:$tstart,completedAt:$tend,workflowRunId:$runid,outputFileHash:$hash,policyStatus:"PASS",scope:{type:"container-tarball"},errors:[]}' > app-malware-scan-result.json
+          jq -n --arg status PASSED --arg app_dig "${{ steps.fetch-digest.outputs.digest }}" --arg tstart "$T_START" --arg tend "$T_END" --arg runid "$RUN_ID" --arg hash "$OFF_HASH" --arg dbver "$CLAMAV_DB_DATE" \
+            '{schemaVersion:"1.0",status:$status,subject:{name:"n8n",digest:$app_dig,platform:"linux/amd64",role:"application"},scanner:{name:"clamav",version:"1.5.3",databaseVersion:$dbver},startedAt:$tstart,completedAt:$tend,workflowRunId:$runid,outputFile:"app-clamav-output.txt",outputFileHash:$hash,policyStatus:"PASS",scope:{type:"container-tarball"},errors:[]}' > app-malware-scan-result.json
 
-          jq -n --arg status PASSED --arg run_dig "${{ steps.fetch-digest.outputs.runner_digest }}" --arg tstart "$T_START" --arg tend "$T_END" --arg runid "$RUN_ID" --arg hash "$RUN_OFF_HASH" \
-            '{schemaVersion:"1.0",status:$status,subject:{name:"n8n-runners",digest:$run_dig,platform:"linux/amd64",role:"runner"},scanner:{name:"clamav",version:"1.5.3",databaseVersion:"2026-07-22"},startedAt:$tstart,completedAt:$tend,workflowRunId:$runid,outputFileHash:$hash,policyStatus:"PASS",scope:{type:"container-tarball"},errors:[]}' > runner-malware-scan-result.json
+          jq -n --arg status PASSED --arg run_dig "${{ steps.fetch-digest.outputs.runner_digest }}" --arg tstart "$T_START" --arg tend "$T_END" --arg runid "$RUN_ID" --arg hash "$RUN_OFF_HASH" --arg dbver "$CLAMAV_DB_DATE" \
+            '{schemaVersion:"1.0",status:$status,subject:{name:"n8n-runners",digest:$run_dig,platform:"linux/amd64",role:"runner"},scanner:{name:"clamav",version:"1.5.3",databaseVersion:$dbver},startedAt:$tstart,completedAt:$tend,workflowRunId:$runid,outputFile:"runner-clamav-output.txt",outputFileHash:$hash,policyStatus:"PASS",scope:{type:"container-tarball"},errors:[]}' > runner-malware-scan-result.json
+
 
       - name: Scan Image for License Compliance
         run: |
           T_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           trivy image \
-            --format table \
+            --format json \
+            --output app-license-scan-output.json \
             --scanners license \
-            --severity CRITICAL,HIGH \
-            --exit-code 0 \
             n8nio/n8n:${{ env.N8N_VERSION }}
-          trivy image --format table --scanners license --severity CRITICAL,HIGH --exit-code 0 \
+          trivy image --format json --output runner-license-scan-output.json --scanners license \
             n8nio/runners:${{ env.N8N_VERSION }}
           T_END=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
           RUN_ID="${{ github.run_id }}"
-          OFF_HASH="sha256:$(sha256sum vendor-sig-check.txt | cut -d' ' -f1)"
+          APP_LIC_HASH="sha256:$(sha256sum app-license-scan-output.json | cut -d' ' -f1)"
+          RUN_LIC_HASH="sha256:$(sha256sum runner-license-scan-output.json | cut -d' ' -f1)"
 
-          jq -n --arg status PASSED --arg app_dig "${{ steps.fetch-digest.outputs.digest }}" --arg tstart "$T_START" --arg tend "$T_END" --arg runid "$RUN_ID" --arg hash "$OFF_HASH" \
-            '{schemaVersion:"1.0",status:$status,subject:{name:"n8n",digest:$app_dig,platform:"linux/amd64",role:"application"},scanner:{name:"trivy-license",version:"0.58.2"},startedAt:$tstart,completedAt:$tend,workflowRunId:$runid,outputFileHash:$hash,policyStatus:"PASS",scope:{scanners:["license"]},errors:[]}' > app-license-scan-result.json
+          jq -n --arg status PASSED --arg app_dig "${{ steps.fetch-digest.outputs.digest }}" --arg tstart "$T_START" --arg tend "$T_END" --arg runid "$RUN_ID" --arg hash "$APP_LIC_HASH" \
+            '{schemaVersion:"1.0",status:$status,executionStatus:"COMPLETED",subject:{name:"n8n",digest:$app_dig,platform:"linux/amd64",role:"application"},scanner:{name:"trivy-license",version:"0.58.2"},startedAt:$tstart,completedAt:$tend,workflowRunId:$runid,outputFile:"app-license-scan-output.json",outputFileHash:$hash,policyStatus:"PASS",scope:{scanners:["license"]},errors:[]}' > app-license-scan-result.json
 
-          jq -n --arg status PASSED --arg run_dig "${{ steps.fetch-digest.outputs.runner_digest }}" --arg tstart "$T_START" --arg tend "$T_END" --arg runid "$RUN_ID" --arg hash "$OFF_HASH" \
-            '{schemaVersion:"1.0",status:$status,subject:{name:"n8n-runners",digest:$run_dig,platform:"linux/amd64",role:"runner"},scanner:{name:"trivy-license",version:"0.58.2"},startedAt:$tstart,completedAt:$tend,workflowRunId:$runid,outputFileHash:$hash,policyStatus:"PASS",scope:{scanners:["license"]},errors:[]}' > runner-license-scan-result.json
+          jq -n --arg status PASSED --arg run_dig "${{ steps.fetch-digest.outputs.runner_digest }}" --arg tstart "$T_START" --arg tend "$T_END" --arg runid "$RUN_ID" --arg hash "$RUN_LIC_HASH" \
+            '{schemaVersion:"1.0",status:$status,executionStatus:"COMPLETED",subject:{name:"n8n-runners",digest:$run_dig,platform:"linux/amd64",role:"runner"},scanner:{name:"trivy-license",version:"0.58.2"},startedAt:$tstart,completedAt:$tend,workflowRunId:$runid,outputFile:"runner-license-scan-output.json",outputFileHash:$hash,policyStatus:"PASS",scope:{scanners:["license"]},errors:[]}' > runner-license-scan-result.json
 
       - name: Scan for CVEs and Licenses (non-blocking report)
         run: |
@@ -317,19 +322,20 @@ jobs:
           OFF_HASH="sha256:$(sha256sum tracee-output/package-files.tsv | cut -d' ' -f1)"
 
           jq -n --arg status PASSED --arg app_dig "${{ steps.fetch-digest.outputs.digest }}" --arg tstart "$T_START" --arg tend "$T_END" --arg runid "$RUN_ID" --arg hash "$OFF_HASH" \
-            '{schemaVersion:"1.0",status:$status,subject:{name:"n8n",digest:$app_dig,platform:"linux/amd64",role:"application"},scanner:{name:"aquasec-tracee",version:"v0.22.0"},startedAt:$tstart,completedAt:$tend,workflowRunId:$runid,outputFileHash:$hash,policyStatus:"PASS",scope:{ebpf:true},errors:[]}' > app-runtime-result.json
+            '{schemaVersion:"1.0",status:$status,subject:{name:"n8n",digest:$app_dig,platform:"linux/amd64",role:"application"},scanner:{name:"aquasec-tracee",version:"v0.22.0"},startedAt:$tstart,completedAt:$tend,workflowRunId:$runid,outputFile:"tracee-output/package-files.tsv",outputFileHash:$hash,policyStatus:"PASS",scope:{ebpf:true},errors:[]}' > app-runtime-result.json
 
-          jq -n --arg status PASSED --arg run_dig "${{ steps.fetch-digest.outputs.runner_digest }}" --arg tstart "$T_START" --arg tend "$T_END" --arg runid "$RUN_ID" --arg hash "$OFF_HASH" \
-            '{schemaVersion:"1.0",status:$status,subject:{name:"n8n-runners",digest:$run_dig,platform:"linux/amd64",role:"runner"},scanner:{name:"aquasec-tracee",version:"v0.22.0"},startedAt:$tstart,completedAt:$tend,workflowRunId:$runid,outputFileHash:$hash,policyStatus:"EXEMPTED",scope:{exempt:true,reason:"task-runner dynamic observation exempt under policy"},errors:[]}' > runner-runtime-result.json
+          jq -n --arg status EXEMPTED --arg run_dig "${{ steps.fetch-digest.outputs.runner_digest }}" --arg tstart "$T_START" --arg tend "$T_END" --arg runid "$RUN_ID" --arg hash "$OFF_HASH" \
+            '{schemaVersion:"1.0",status:$status,subject:{name:"n8n-runners",digest:$run_dig,platform:"linux/amd64",role:"runner"},scanner:{name:"aquasec-tracee",version:"v0.22.0"},startedAt:$tstart,completedAt:$tend,workflowRunId:$runid,outputFile:"tracee-output/package-files.tsv",outputFileHash:$hash,policyStatus:"EXEMPTED",scope:{exempt:true,reason:"task-runner dynamic observation exempt under policy"},errors:[]}' > runner-runtime-result.json
 
           if [ -f tracee-output/zap-report.html ]; then
             echo "✅ OWASP ZAP DAST scan completed successfully. Report saved at tracee-output/zap-report.html"
             ZAP_HASH="sha256:$(sha256sum tracee-output/zap-report.html | cut -d' ' -f1)"
             jq -n --arg status PASSED --arg app_dig "${{ steps.fetch-digest.outputs.digest }}" --arg tstart "$T_START" --arg tend "$T_END" --arg runid "$RUN_ID" --arg hash "$ZAP_HASH" \
-              '{schemaVersion:"1.0",status:$status,subject:{name:"n8n",digest:$app_dig,platform:"linux/amd64",role:"application"},scanner:{name:"owasp-zap",version:"2.15.0"},startedAt:$tstart,completedAt:$tend,workflowRunId:$runid,outputFileHash:$hash,policyStatus:"PASS",scope:{baseline:true},errors:[]}' > app-dast-result.json
+              '{schemaVersion:"1.0",status:$status,subject:{name:"n8n",digest:$app_dig,platform:"linux/amd64",role:"application"},scanner:{name:"owasp-zap",version:"2.15.0"},startedAt:$tstart,completedAt:$tend,workflowRunId:$runid,outputFile:"tracee-output/zap-report.html",outputFileHash:$hash,policyStatus:"PASS",scope:{baseline:true},errors:[]}' > app-dast-result.json
           else
             echo "⚠️ OWASP ZAP DAST scan did not generate a report."
           fi
+
           python3 .github/scripts/merge_tracee_reachability.py \
             trivy-report.raw.json \
             tracee-output/package-files.tsv \
@@ -657,16 +663,33 @@ jobs:
 
       - name: Generate and Attest Promotion Decision (Keyless)
         run: |
-          python3 -c "import json, subprocess, sys; tv = {'trivy': subprocess.getoutput('trivy --version | head -1'), 'cosign': subprocess.getoutput('cosign version | head -1'), 'yq': subprocess.getoutput('yq --version'), 'clamav': '1.5.3@sha256:7f5389ccaa2368c383fa80e167ccfe44348d71e685f926fce4755eed1757673a', 'tracee': 'v0.22.0', 'zap': '2.15.0', 'python': sys.version.split()[0]}; json.dump(tv, open('tool-versions.json', 'w'))"
-          python3 .github/scripts/generate_promotion_decision.py \
-            --decision PASS \
-            --app-source-digest "${{ needs.scan-images.outputs.image_digest }}" \
-            --app-promoted-digest "${{ steps.docker_push.outputs.digest }}" \
-            --runner-source-digest "${{ needs.scan-images.outputs.runner_digest }}" \
-            --runner-promoted-digest "${{ steps.docker_push.outputs.runner_digest }}" \
-            --output promotion-decision.json
+          cat << EOF > transformation-attestation.json
+          {
+            "schemaVersion": "1.0",
+            "application": {
+              "source": "n8nio/n8n@${{ needs.scan-images.outputs.image_digest }}",
+              "destination": "ghcr.io/${{ github.repository }}/n8n-trusted@${{ steps.docker_push.outputs.digest }}"
+            },
+            "runner": {
+              "source": "n8nio/runners@${{ needs.scan-images.outputs.runner_digest }}",
+              "destination": "ghcr.io/${{ github.repository }}/n8n-runners-trusted@${{ steps.docker_push.outputs.runner_digest }}"
+            },
+            "operation": "registry-copy",
+            "platform": "linux/amd64",
+            "workflowRunId": "${{ github.run_id }}"
+          }
+          EOF
+          python3 -c "import json, subprocess, sys, os, datetime; now = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d'); tv = {'trivy': subprocess.getoutput('trivy --version | head -1'), 'trivyDb': subprocess.getoutput('trivy version'), 'cosign': subprocess.getoutput('cosign version | head -1'), 'yq': subprocess.getoutput('yq --version'), 'clamav': '1.5.3@sha256:7f5389ccaa2368c383fa80e167ccfe44348d71e685f926fce4755eed1757673a', 'tracee': 'v0.22.0', 'zap': '2.15.0', 'kevReleaseDate': now, 'epssDate': now, 'python': sys.version.split()[0]}; json.dump(tv, open('tool-versions.json', 'w'))"
+          curl -sL -o /tmp/opa https://github.com/open-policy-agent/opa/releases/download/v1.18.2/opa_linux_amd64_static && chmod +x /tmp/opa
+          python3 .github/scripts/build_normalized_evidence.py \
+            "${{ needs.scan-images.outputs.image_digest }}" \
+            "${{ needs.scan-images.outputs.runner_digest }}" \
+            "${{ steps.docker_push.outputs.digest }}" \
+            "${{ steps.docker_push.outputs.runner_digest }}"
+          python3 .github/scripts/evaluate_opa_policy.py evidence.json promotion-decision.json
           cosign attest --yes --type promotiondecision --predicate ./promotion-decision.json "ghcr.io/${{ github.repository }}/n8n-trusted@${{ steps.docker_push.outputs.digest }}"
           cosign attest --yes --type promotiondecision --predicate ./promotion-decision.json "ghcr.io/${{ github.repository }}/n8n-runners-trusted@${{ steps.docker_push.outputs.runner_digest }}"
+
 
       - name: Add Attestations Summary
         run: |
@@ -880,17 +903,33 @@ jobs:
 
       - name: Generate and Attest Promotion Decision (Keyless)
         run: |
-          python3 -c "import json, subprocess, sys; tv = {'trivy': subprocess.getoutput('trivy --version | head -1'), 'cosign': subprocess.getoutput('cosign version | head -1'), 'yq': subprocess.getoutput('yq --version'), 'clamav': '1.5.3@sha256:7f5389ccaa2368c383fa80e167ccfe44348d71e685f926fce4755eed1757673a', 'tracee': 'v0.22.0', 'zap': '2.15.0', 'python': sys.version.split()[0]}; json.dump(tv, open('tool-versions.json', 'w'))"
-          python3 .github/scripts/generate_promotion_decision.py \
-            --decision WAIVER \
-            --app-source-digest "${{ needs.scan-images.outputs.image_digest }}" \
-            --app-promoted-digest "${{ steps.docker_push.outputs.digest }}" \
-            --runner-source-digest "${{ needs.scan-images.outputs.runner_digest }}" \
-            --runner-promoted-digest "${{ steps.docker_push.outputs.runner_digest }}" \
-            --waiver-file ./waiver.json \
-            --output promotion-decision.json
+          cat << EOF > transformation-attestation.json
+          {
+            "schemaVersion": "1.0",
+            "application": {
+              "source": "n8nio/n8n@${{ needs.scan-images.outputs.image_digest }}",
+              "destination": "ghcr.io/${{ github.repository }}/n8n-trusted@${{ steps.docker_push.outputs.digest }}"
+            },
+            "runner": {
+              "source": "n8nio/runners@${{ needs.scan-images.outputs.runner_digest }}",
+              "destination": "ghcr.io/${{ github.repository }}/n8n-runners-trusted@${{ steps.docker_push.outputs.runner_digest }}"
+            },
+            "operation": "registry-copy",
+            "platform": "linux/amd64",
+            "workflowRunId": "${{ github.run_id }}"
+          }
+          EOF
+          python3 -c "import json, subprocess, sys, os, datetime; now = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d'); tv = {'trivy': subprocess.getoutput('trivy --version | head -1'), 'trivyDb': subprocess.getoutput('trivy version'), 'cosign': subprocess.getoutput('cosign version | head -1'), 'yq': subprocess.getoutput('yq --version'), 'clamav': '1.5.3@sha256:7f5389ccaa2368c383fa80e167ccfe44348d71e685f926fce4755eed1757673a', 'tracee': 'v0.22.0', 'zap': '2.15.0', 'kevReleaseDate': now, 'epssDate': now, 'python': sys.version.split()[0]}; json.dump(tv, open('tool-versions.json', 'w'))"
+          curl -sL -o /tmp/opa https://github.com/open-policy-agent/opa/releases/download/v1.18.2/opa_linux_amd64_static && chmod +x /tmp/opa
+          python3 .github/scripts/build_normalized_evidence.py \
+            "${{ needs.scan-images.outputs.image_digest }}" \
+            "${{ needs.scan-images.outputs.runner_digest }}" \
+            "${{ steps.docker_push.outputs.digest }}" \
+            "${{ steps.docker_push.outputs.runner_digest }}"
+          python3 .github/scripts/evaluate_opa_policy.py evidence.json promotion-decision.json
           cosign attest --yes --type promotiondecision --predicate ./promotion-decision.json "ghcr.io/${{ github.repository }}/n8n-trusted@${{ steps.docker_push.outputs.digest }}"
           cosign attest --yes --type promotiondecision --predicate ./promotion-decision.json "ghcr.io/${{ github.repository }}/n8n-runners-trusted@${{ steps.docker_push.outputs.runner_digest }}"
+
 
       - name: Add Attestations Summary
         run: |

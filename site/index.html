@@ -1,506 +1,680 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="ArtifactGate is an evidence-based admission and promotion gate for third-party container images.">
-  <title>ArtifactGate · Evidence before deployment</title>
-  <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ArtifactGate — Enterprise Third-Party Container Admission Architecture</title>
+  <meta name="description" content="Reference architecture for admitting third-party container images into enterprise infrastructure using OPA Policy-as-Code, Cosign attestations, and digest-bound enforcement.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #0a0d14;
+      --bg-secondary: #121722;
+      --bg-card: #182030;
+      --bg-card-hover: #1f2a3e;
+      --border-color: rgba(255, 255, 255, 0.08);
+      --border-accent: rgba(99, 102, 241, 0.3);
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --text-dim: #6b7280;
+      --accent-indigo: #6366f1;
+      --accent-purple: #8b5cf6;
+      --accent-cyan: #06b6d4;
+      --accent-emerald: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-rose: #f43f5e;
+      --font-heading: 'Outfit', sans-serif;
+      --font-body: 'Inter', sans-serif;
+      --font-code: 'Fira Code', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg-primary);
+      color: var(--text-main);
+      font-family: var(--font-body);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Container & Layout */
+    .container { max-width: 1200px; margin: 0 auto; padding: 0 1.5rem; }
+    header { border-bottom: 1px solid var(--border-color); padding: 1.5rem 0; position: sticky; top: 0; background: rgba(10, 13, 20, 0.85); backdrop-filter: blur(12px); z-index: 100; }
+    .nav-wrapper { display: flex; justify-content: space-between; align-items: center; }
+    .logo { font-family: var(--font-heading); font-size: 1.5rem; font-weight: 800; color: #fff; text-decoration: none; display: flex; align-items: center; gap: 0.5rem; }
+    .logo span { background: linear-gradient(135deg, var(--accent-indigo), var(--accent-cyan)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .nav-links { display: flex; gap: 1.5rem; list-style: none; }
+    .nav-links a { color: var(--text-muted); text-decoration: none; font-size: 0.9rem; font-weight: 500; transition: color 0.2s; }
+    .nav-links a:hover { color: #fff; }
+
+    /* Banners & Badges */
+    .banner-warning { background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); color: #fcd34d; padding: 0.75rem 1.25rem; border-radius: 8px; font-size: 0.875rem; margin-bottom: 2rem; display: flex; align-items: center; gap: 0.75rem; }
+    .badge { display: inline-flex; align-items: center; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+    .badge-indigo { background: rgba(99, 102, 241, 0.15); color: #a5b4fc; border: 1px solid rgba(99, 102, 241, 0.3); }
+    .badge-emerald { background: rgba(16, 185, 129, 0.15); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .badge-amber { background: rgba(245, 158, 11, 0.15); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.3); }
+    .badge-rose { background: rgba(244, 63, 94, 0.15); color: #fda4af; border: 1px solid rgba(244, 63, 94, 0.3); }
+
+    /* Hero Section */
+    .hero { padding: 4rem 0 3rem; text-align: center; }
+    .hero h1 { font-family: var(--font-heading); font-size: 3rem; font-weight: 800; line-height: 1.15; margin-bottom: 1.25rem; color: #fff; }
+    .hero h1 span { background: linear-gradient(135deg, #a5b4fc, #38bdf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .hero p { font-size: 1.2rem; color: var(--text-muted); max-width: 800px; margin: 0 auto 2rem; }
+    .hero-meta { display: flex; justify-content: center; gap: 2rem; flex-wrap: wrap; margin-top: 1.5rem; }
+    .meta-box { background: var(--bg-secondary); border: 1px solid var(--border-color); padding: 0.75rem 1.25rem; border-radius: 8px; text-align: left; }
+    .meta-box label { font-size: 0.75rem; text-transform: uppercase; color: var(--text-dim); display: block; font-weight: 600; }
+    .meta-box span { font-size: 0.95rem; font-weight: 600; color: #fff; }
+
+    /* Section Styling */
+    section { padding: 3.5rem 0; border-top: 1px solid var(--border-color); }
+    .section-header { margin-bottom: 2.5rem; }
+    .section-header h2 { font-family: var(--font-heading); font-size: 2rem; font-weight: 700; color: #fff; margin-bottom: 0.5rem; }
+    .section-header p { color: var(--text-muted); font-size: 1.05rem; }
+
+    /* Grid & Cards */
+    .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; }
+    .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; }
+    .card { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 1.75rem; transition: transform 0.2s, border-color 0.2s; }
+    .card:hover { border-color: var(--border-accent); transform: translateY(-2px); }
+    .card h3 { font-family: var(--font-heading); font-size: 1.25rem; font-weight: 600; color: #fff; margin-bottom: 0.75rem; }
+    .card p { color: var(--text-muted); font-size: 0.95rem; }
+
+    /* Tables */
+    .table-wrapper { width: 100%; overflow-x: auto; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; margin-top: 1rem; }
+    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem; }
+    th { background: rgba(255, 255, 255, 0.03); color: #fff; padding: 1rem; border-bottom: 1px solid var(--border-color); font-weight: 600; }
+    td { padding: 1rem; border-bottom: 1px solid var(--border-color); color: var(--text-muted); }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255, 255, 255, 0.015); }
+
+    /* Diagram Block */
+    .diagram-box { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 2rem; font-family: var(--font-code); font-size: 0.85rem; color: #38bdf8; overflow-x: auto; white-space: pre; line-height: 1.4; }
+
+    /* Code Blocks */
+    .code-block { background: #06080d; border: 1px solid var(--border-color); border-radius: 8px; padding: 1.25rem; font-family: var(--font-code); font-size: 0.85rem; color: #e5e7eb; overflow-x: auto; }
+
+    /* Footer */
+    footer { border-top: 1px solid var(--border-color); padding: 3rem 0; color: var(--text-dim); font-size: 0.875rem; text-align: center; }
+    footer a { color: var(--text-muted); text-decoration: none; }
+    footer a:hover { color: #fff; }
+  </style>
 </head>
 <body>
-<main>
-  <header class="hero">
-    <p class="eyebrow">PERSONAL REFERENCE PROJECT · CONTAINER SUPPLY-CHAIN ASSURANCE</p>
-    <h1>Evidence before deployment.</h1>
-    <p class="lede">ArtifactGate treats a third-party container as untrusted input until an exact, immutable image pair has enough evidence for a recorded promotion decision. <br>
-    <em>Note: Upstream signature verification is warning-only; since vendors do not sign these images, this remains the primary identity gap in the trust chain.</em></p>
-    <p class="principle">A trusted name is not provenance. An SBOM is not a verdict. A signature does not make unsafe content safe.</p>
-    <div class="actions"><a class="button" href="https://github.com/llody9977/artifactgate">View repository</a><a href="#evidence">Latest evidence</a></div>
+
+  <header>
+    <div class="container nav-wrapper">
+      <a href="#" class="logo">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Artifact<span>Gate</span>
+      </a>
+      <ul class="nav-links">
+        <li><a href="#problem">Business Risk</a></li>
+        <li><a href="#requirements">Requirements</a></li>
+        <li><a href="#standards">Standards</a></li>
+        <li><a href="#architecture">Architecture</a></li>
+        <li><a href="#opa-policy">OPA Policy</a></li>
+        <li><a href="#controls">Control Matrix</a></li>
+        <li><a href="#incidents">Case Studies</a></li>
+        <li><a href="#maturity">Maturity Roadmap</a></li>
+      </ul>
+    </div>
   </header>
 
-  <section>
-    <p class="kicker">THE PROBLEM</p>
-    <h2>Using a vendor image transfers risk into your environment</h2>
-    <p>A mutable tag can point to different bytes tomorrow. The image can contain vulnerable, malicious or poorly maintained components. Its upstream build history may be absent. A clean scan can become stale, and the application sidecar may carry a separate risk from the main image.</p>
-    <p>ArtifactGate does not assume that these uncertainties disappear. It makes them visible, applies policy to the evidence available now, and records the boundary of the decision.</p>
-  </section>
+  <main class="container">
 
-  <section>
-    <p class="kicker">THE DECISION MODEL</p>
-    <h2>Six questions, one exact artifact pair</h2>
-    <div class="grid">
-      <article><span>01</span><h3>Source</h3><p>Did it come from an allowed upstream and an accepted version?</p></article>
-      <article><span>02</span><h3>Identity</h3><p>Which immutable OCI digests were actually assessed?</p></article>
-      <article><span>03</span><h3>Composition</h3><p>What does the digest-bound SPDX SBOM declare is inside?</p></article>
-      <article><span>04</span><h3>Risk</h3><p>What do CVE, KEV, EPSS, age, malware, secret, OpenVEX and bounded runtime signals show?</p></article>
-      <article><span>05</span><h3>Decision</h3><p>Did policy allow promotion, or did we sign expiring OpenVEX exception statements?</p></article>
-      <article><span>06</span><h3>Continuity</h3><p>Can deployment verify and monitor the same application and runner bytes?</p></article>
-    </div>
-  </section>
-
-  <section>
-    <p class="kicker">WHAT TO LOOK OUT FOR</p>
-    <h2>Questions to ask before trusting any third-party image</h2>
-    <p class="note" style="margin-bottom: 2rem;">To establish clear accountability, every threat is mapped to the specific Decision Model question it compromises.</p>
-
-    <h3 style="margin-top: 2rem; border-bottom: 1px solid var(--line); padding-bottom: 0.5rem; color: var(--ink);">Intake & Source Risks</h3>
-    <div class="checklist">
-      <article>
-        <small style="display: block; font-family: monospace; color: var(--accent); margin-bottom: 0.3rem; font-weight: 700; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.05em;">Threatens: 01 Source</small>
-        <h3>Registry Takeover Risk</h3>
-        <p>Is the upstream registry account secure? Threat actors compromise maintainer accounts to distribute malicious updates. <br>
-        <em>Boundary:</em> <strong>Warning-Only</strong>. The gate warns on missing signatures, but cannot verify the original publisher account's security. <br>
-        <em>Incident:</em> The <strong>ua-parser-js library hijack (2021)</strong>, where compromised developer credentials were used to publish packages containing cryptomining malware (<a href="https://nvd.nist.gov/vuln/detail/CVE-2021-4229">CVE-2021-4229</a>).</p>
-      </article>
-      <article>
-        <small style="display: block; font-family: monospace; color: var(--accent); margin-bottom: 0.3rem; font-weight: 700; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.05em;">Threatens: 01 Source / 02 Identity</small>
-        <h3>Silent Tag Drift Risk</h3>
-        <p>Are we pulling mutable references? Relying on tags like <code>latest</code> allows upstream code to change without your knowledge. <br>
-        <em>Boundary:</em> <strong>Enforced Prevention</strong>. The ingestion gate requires resolving version tags to immutable digests first. Pinned digests cannot drift. <br>
-        <em>Incident:</em> The <strong>JFrog Docker Hub poisoning campaign (2024)</strong>, where threat actors uploaded over 4 million malicious, spoofed/drifted repositories to Docker Hub to distribute phishing scams and malware (<a href="https://jfrog.com/blog/malicious-images-docker-hub/">JFrog Research</a>).</p>
-      </article>
-      <article>
-        <small style="display: block; font-family: monospace; color: var(--accent); margin-bottom: 0.3rem; font-weight: 700; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.05em;">Threatens: 01 Source</small>
-        <h3>Third-Party Action Compromise</h3>
-        <p>Can third-party actions in GitHub workflows be updated or retagged to exfiltrate secrets or inject backdoors? <br>
-        <em>Boundary:</em> <strong>Enforced Prevention</strong>. All actions used in our promotion and CI workflows are pinned to immutable commit SHAs rather than mutable version tags. <br>
-        <em>Incident:</em> The <strong>tj-actions/changed-files compromise (March 2025)</strong>, where a compromised, retagged action (<a href="https://nvd.nist.gov/vuln/detail/CVE-2025-30066">CVE-2025-30066</a>) leaked CI secrets across thousands of downstream repositories.</p>
-      </article>
-    </div>
-
-    <h3 style="margin-top: 2.5rem; border-bottom: 1px solid var(--line); padding-bottom: 0.5rem; color: var(--ink);">Pipeline & Build Risks</h3>
-    <div class="checklist">
-      <article>
-        <small style="display: block; font-family: monospace; color: var(--accent); margin-bottom: 0.3rem; font-weight: 700; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.05em;">Threatens: 03 Composition</small>
-        <h3>Embedded Credentials in Vendor Image</h3>
-        <p>Do upstream vendors accidentally bake credentials, private keys, or API tokens into their public container layers? <br>
-        <em>Boundary:</em> <strong>Enforced Prevention</strong>. The gate runs a secret scanner (<code>trivy image --scanners secret</code>) and fails the promotion if any credentials are found. <br>
-        <em>Rationale:</em> Blocking hardcoded secrets at the gate prevents leaked vendor credentials from being deployed to production environments.</p>
-      </article>
-      <article>
-        <small style="display: block; font-family: monospace; color: var(--accent); margin-bottom: 0.3rem; font-weight: 700; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.05em;">Threatens: 03 Composition</small>
-        <h3>Socially Engineered Logic Bombs</h3>
-        <p>Is the codebase immune to malicious contributors? A contributor can spend years introducing obfuscated backdoors that static scans miss. <br>
-        <em>Boundary:</em> <strong>Structural Limitation</strong>. Static scans cannot detect intentional logical backdoors. The gate runs kernel-level eBPF tracing during smoke tests to monitor runtime executions, but this covers only active test paths. <br>
-        <em>Incident:</em> The <strong>XZ Utils backdoor (2024)</strong>, where a trusted maintainer spent years planting a sophisticated build-time SSH authentication bypass (<a href="https://nvd.nist.gov/vuln/detail/CVE-2024-3094">CVE-2024-3094</a>).</p>
-      </article>
-      <article>
-        <small style="display: block; font-family: monospace; color: var(--accent); margin-bottom: 0.3rem; font-weight: 700; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.05em;">Threatens: 01 Source / 04 Risk</small>
-        <h3>Pipeline Takeover & Token Theft</h3>
-        <p>Can the container compromise the build pipeline? A malicious dependency can execute install scripts to harvest secrets from ambient environment variables. <br>
-        <em>Boundary:</em> <strong>Partial Prevention</strong>. We use least-privilege, job-scoped tokens — the scanning job is read-only, and write scopes are confined to the promotion jobs. <br>
-        <em>Incident:</em> The <strong>Codecov Bash Uploader compromise (2021)</strong>, where a compromised script silently exfiltrated CI environment credentials (<a href="https://www.cisa.gov/news-events/alerts/2021/04/27/compromise-codecov-bash-uploader-script">CISA Alert AA21-117A</a>).</p>
-      </article>
-      <article>
-        <small style="display: block; font-family: monospace; color: var(--accent); margin-bottom: 0.3rem; font-weight: 700; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.05em;">Threatens: 03 Composition / 04 Risk</small>
-        <h3>Sidecar & Runner Exposure</h3>
-        <p>Are we verifying the entire bundle? Hardening the main application while leaving task runners or sidecars unverified leaves a backdoor. <br>
-        <em>Boundary:</em> <strong>Enforced</strong>. The policy configures that all companion runner images must be resolved to digests and evaluated under the same promotion rules. <br>
-        <em>Rationale:</em> Companion containers (such as unpinned local databases or runners) share the host's execution environment and can serve as entry points to otherwise secure workloads.</p>
-      </article>
-      <article>
-        <small style="display: block; font-family: monospace; color: var(--accent); margin-bottom: 0.3rem; font-weight: 700; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.05em;">Threatens: 04 Risk</small>
-        <h3>Container Escape & Privileges</h3>
-        <p>What is the worst-case blast radius? Running as root or with high capabilities enables container breakouts to the host. <br>
-        <em>Boundary:</em> <strong>Enforced at Merge</strong>. The gate scans deployment manifests for insecure configurations during repository merge checks, blocking insecure configurations from entering main (not at promotion). <br>
-        <em>Incident:</em> The <strong>runc container escape (2024)</strong>, where a runtime file descriptor leak allowed attackers to break container boundaries and gain host root access (<a href="https://nvd.nist.gov/vuln/detail/CVE-2024-21626">CVE-2024-21626</a>).</p>
-      </article>
-      <article>
-        <small style="display: block; font-family: monospace; color: var(--accent); margin-bottom: 0.3rem; font-weight: 700; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.05em;">Threatens: 05 Decision</small>
-        <h3>Waiver & Exception Decay</h3>
-        <p>Are exceptions auditable and expiring? Permanent exceptions become permanent backdoors. <br>
-        <em>Boundary:</em> <strong>Enforced</strong>. The workflow requires exceptions to target specific CVEs, document compensating controls, and declare an expiry date. <br>
-        <em>Incident:</em> The <strong>Equifax breach (2017)</strong>, where <a href="https://nvd.nist.gov/vuln/detail/CVE-2017-5638">CVE-2017-5638</a> in Apache Struts was known and patched upstream, but exposure persisted for months due to failed remediation and exception tracking (147 million records compromised).</p>
-      </article>
-      <article>
-        <small style="display: block; font-family: monospace; color: var(--accent); margin-bottom: 0.3rem; font-weight: 700; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.05em;">Threatens: 05 Decision</small>
-        <h3>Poisoned Pipeline Execution (PPE)</h3>
-        <p>Can a malicious pull request edit the gate's policy files (like <code>vulnerability-gate-policy.yml</code>) to weaken promotion thresholds? <br>
-        <em>Boundary:</em> <strong>Enforced by Branch Protection</strong>. Branch protection rules, required review approvals, and strict CODEOWNERS constraints prevent modifications to the <code>.github/</code> and <code>policy/</code> folders from being merged without administrator review. <br>
-        <em>Rationale:</em> Enforces segregation of duties by blocking pull requests from auto-merging policy modifications.</p>
-      </article>
-    </div>
-
-    <h3 style="margin-top: 2.5rem; border-bottom: 1px solid var(--line); padding-bottom: 0.5rem; color: var(--ink);">Post-Promotion & Deploy Risks</h3>
-    <div class="checklist">
-      <article>
-        <small style="display: block; font-family: monospace; color: var(--accent); margin-bottom: 0.3rem; font-weight: 700; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.05em;">Threatens: 04 Risk / 06 Continuity</small>
-        <h3>Post-Promotion Security Decay</h3>
-        <p>How do we handle new disclosures? An image that was clean at promotion decays as new vulnerabilities are discovered. <br>
-        <em>Boundary:</em> <strong>Partial (Active Detection)</strong>. The gate scans the deployed digest weekly, but cannot prevent zero-days exploited before public disclosure. <br>
-        <em>Incident:</em> The <strong>Cleo File Transfer campaign (December 2024)</strong>, where zero-day vulnerabilities were actively weaponized before patches or CVE records were published (<a href="https://nvd.nist.gov/vuln/detail/CVE-2024-50623">CVE-2024-50623</a>).</p>
-      </article>
-      <article>
-        <small style="display: block; font-family: monospace; color: var(--accent); margin-bottom: 0.3rem; font-weight: 700; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.05em;">Threatens: 02 Identity / 06 Continuity</small>
-        <h3>Compromised Registry Namespace</h3>
-        <p>If an attacker gains write access to our GHCR namespace, can they swap the trusted image? <br>
-        <em>Boundary:</em> <strong>Enforced by Attestation</strong>. The deployment installer does not trust registry name presence; it cryptographically verifies build attestations generated by our OIDC-backed workflow and pins the exact digests. <br>
-        <em>Rationale:</em> Attackers who compromise repository registry accounts cannot bypass admission control without also stealing the OIDC-backed signing credentials of the GitHub Actions runner.</p>
-      </article>
-      <article>
-        <small style="display: block; font-family: monospace; color: var(--accent); margin-bottom: 0.3rem; font-weight: 700; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.05em;">Threatens: 06 Continuity</small>
-        <h3>Verification Bypass at Deploy</h3>
-        <p>Can developers deploy promoted images in `--insecure-lab-mode`, bypassing attestation checks entirely? <br>
-        <em>Boundary:</em> <strong>Structural Limitation</strong>. The installer allows disabling checks for local development. In production, this escape hatch must be blocked by container admission controllers (like Kyverno or Gatekeeper). <br>
-        <em>Rationale:</em> Bypassing verification in production destroys the entire chain of trust established by the promotion gate.</p>
-      </article>
-    </div>
-  </section>
-
-  <section class="flow">
-    <p class="kicker">CONTROLLED PROMOTION</p>
-    <h2>Quarantine → assess → decide → attest → deploy → re-check</h2>
-    <p>The upstream image is never treated as internally trusted merely because it can be pulled. ArtifactGate resolves the digest first, evaluates the application and runner together, fails closed when required evidence is unknown, and promotes the accepted pair into a controlled namespace. Deployment verifies GitHub OIDC-backed attestations and pins both digests.</p>
-
-    <!-- Visual Architecture & Workflow Diagram -->
-    <svg class="flow-svg" viewBox="0 0 920 380" width="100%" height="auto" style="margin-top: 2rem; padding: 1.5rem;">
-      <!-- Definitions for gradients and markers -->
-      <defs>
-        <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-          <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#2457d6" />
-        </marker>
-        <linearGradient id="untrusted-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#fce8e6" />
-          <stop offset="100%" stop-color="#fad2cf" />
-        </linearGradient>
-        <linearGradient id="trusted-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#e6f4ea" />
-          <stop offset="100%" stop-color="#ceead6" />
-        </linearGradient>
-      </defs>
-
-      <!-- Left: Untrusted Upstream -->
-      <rect x="20" y="60" width="150" height="120" rx="6" fill="url(#untrusted-grad)" stroke="#ea4335" stroke-width="1.5" />
-      <text x="95" y="85" text-anchor="middle" font-weight="bold" font-size="12" font-family="system-ui, sans-serif" fill="#c5221f">Upstream Registry</text>
-      <text x="95" y="105" text-anchor="middle" font-size="10" font-family="system-ui, sans-serif" fill="#c5221f">(Untrusted Input)</text>
-      <text x="95" y="135" text-anchor="middle" font-family="monospace" font-size="10" fill="#7f1d1d">n8nio/n8n:latest</text>
-      <text x="95" y="155" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="#7f1d1d">[Mutable Tag]</text>
-
-      <!-- Flow Arrow 1 -->
-      <line x1="170" x2="220" y1="120" y2="120" stroke="#2457d6" stroke-width="2" marker-end="url(#arrow)" />
-
-      <!-- Middle: Quarantine & Promotion Gate -->
-      <rect x="220" y="20" width="470" height="240" rx="8" fill="#ffffff" stroke="#2457d6" stroke-width="2" stroke-dasharray="4 4" />
-      <text x="455" y="42" text-anchor="middle" font-weight="bold" font-size="13" font-family="system-ui, sans-serif" fill="#2457d6">ArtifactGate Promotion Pipeline (GitHub Actions)</text>
-
-      <!-- Box inside Gate: Scan & Observe -->
-      <rect x="235" y="60" width="195" height="185" rx="4" fill="#f8fafc" stroke="#d7dee7" />
-      <text x="332" y="78" text-anchor="middle" font-weight="bold" font-size="11" font-family="system-ui, sans-serif" fill="#111827">1. Scan & Observe</text>
-      <text x="245" y="102" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• Trivy SBOM & CVE Scan</text>
-      <text x="245" y="120" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• ClamAV Malware Scan</text>
-      <text x="245" y="138" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• OWASP ZAP DAST Scan</text>
-      <text x="245" y="156" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• Tracee runtime eBPF</text>
-      <text x="245" y="174" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• Vendor Signature Check</text>
-      <text x="245" y="192" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• Secret & Licence Scan</text>
-      <text x="245" y="210" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• Image Allowlist Ingestion</text>
-
-      <!-- Box inside Gate: Evaluate & Decide -->
-      <rect x="475" y="60" width="195" height="185" rx="4" fill="#f8fafc" stroke="#d7dee7" />
-      <text x="572" y="78" text-anchor="middle" font-weight="bold" font-size="11" font-family="system-ui, sans-serif" fill="#111827">2. Evaluate & Decide</text>
-      <text x="485" y="102" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• KEV & EPSS Enrichment</text>
-      <text x="485" y="120" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• Age & Policy Gating</text>
-      <text x="485" y="138" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• OpenVEX Waiver Check</text>
-      <text x="485" y="156" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• ZAP Rules.tsv Tuning</text>
-      <text x="485" y="174" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• Fail-closed Decider</text>
-      <text x="485" y="192" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• Cosign Keyless Sign & Attest</text>
-      <text x="485" y="210" font-size="10" font-family="system-ui, sans-serif" fill="#475569">• OIDC Identity Bind</text>
-
-      <!-- Flow Arrow 2 (Success) -->
-      <line x1="690" x2="740" y1="120" y2="120" stroke="#2457d6" stroke-width="2" marker-end="url(#arrow)" />
-
-      <!-- Right: Promoted Namespace -->
-      <rect x="740" y="60" width="160" height="120" rx="6" fill="url(#trusted-grad)" stroke="#34a853" stroke-width="1.5" />
-      <text x="820" y="85" text-anchor="middle" font-weight="bold" font-size="12" font-family="system-ui, sans-serif" fill="#137333">GHCR Namespace</text>
-      <text x="820" y="105" text-anchor="middle" font-size="10" font-family="system-ui, sans-serif" fill="#137333">(Assured Output)</text>
-      <text x="820" y="135" text-anchor="middle" font-family="monospace" font-size="10" fill="#14532d">n8n-trusted@sha256</text>
-      <text x="820" y="155" text-anchor="middle" font-size="9" font-family="system-ui, sans-serif" fill="#14532d">[Cosign Signed]</text>
-
-      <!-- Arrow 3 (Admission / Deploy) -->
-      <line x1="820" x2="820" y1="180" y2="280" stroke="#2457d6" stroke-width="2" marker-end="url(#arrow)" />
-      <text x="830" y="235" font-size="10" font-family="system-ui, sans-serif" fill="#5f6368" font-weight="bold">Verify & Pin</text>
-
-      <!-- Production Workload (install.sh) -->
-      <rect x="740" y="280" width="160" height="70" rx="6" fill="#f8fafc" stroke="#d7dee7" stroke-width="1.5" />
-      <text x="820" y="305" text-anchor="middle" font-weight="bold" font-size="11" font-family="system-ui, sans-serif" fill="#111827">Production Workload</text>
-      <text x="820" y="325" text-anchor="middle" font-size="10" font-family="system-ui, sans-serif" fill="#475569">install.sh Admission</text>
-
-      <!-- Rejection Path -->
-      <line x1="572" x2="572" y1="245" y2="280" stroke="#ea4335" stroke-width="2" marker-end="url(#arrow)" />
-      <text x="580" y="263" font-size="10" font-family="system-ui, sans-serif" fill="#ea4335" font-weight="bold">Gate Block</text>
-
-      <!-- Manual Review Box -->
-      <rect x="445" y="280" width="250" height="70" rx="6" fill="#fef7e0" stroke="#b06000" stroke-width="1.5" stroke-dasharray="2 2" />
-      <text x="570" y="305" text-anchor="middle" font-weight="bold" font-size="11" font-family="system-ui, sans-serif" fill="#b06000">Manual Review & Exception</text>
-      <text x="570" y="325" text-anchor="middle" font-size="10" font-family="system-ui, sans-serif" fill="#b06000">expiring waiver + env approval</text>
-
-      <!-- Rejoin Success Path -->
-      <path d="M 695 315 L 720 315 L 720 120" stroke="#b06000" stroke-width="1.5" fill="none" />
-
-      <!-- Weekly Re-Scan Loop -->
-      <path d="M 820 350 L 820 365 L 205 365 L 205 130" stroke="#1a73e8" stroke-dasharray="4 4" stroke-width="1.5" fill="none" marker-end="url(#arrow)" />
-      <text x="215" y="358" font-size="10" font-family="system-ui, sans-serif" fill="#1a73e8" font-weight="bold">Weekly Re-Scan Loop</text>
-    </svg>
-
-    <!-- Interactive Step-by-Step Flowchart Cards -->
-    <div class="flowchart">
-      <div class="flow-step">
-        <div class="step-num">01</div>
-        <div class="step-card">
-          <h4>Intake, Allowlist & Signature Check</h4>
-          <p>Enforces the source registry allowlist, resolves mutable version tags to immutable digests, and validates upstream vendor signatures using Cosign.</p>
-          <span class="step-badge prevention">Preventive</span>
+    <!-- Hero Section -->
+    <section class="hero">
+      <div class="banner-warning">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <div>
+          <strong>Reference Architecture & Implementation Pattern:</strong> ArtifactGate is designed to demonstrate third-party container admission control. Additional governance and infrastructure are required before production deployment.
         </div>
       </div>
-      
-      <div class="flow-step">
-        <div class="step-num">02</div>
-        <div class="step-card">
-          <h4>Static Scanning</h4>
-          <p>Container layers are statically scanned for vulnerabilities (CVEs), secrets, and licensing liabilities with Trivy, and cross-referenced for malware with ClamAV.</p>
-          <span class="step-badge mixed">Mixed</span>
+
+      <span class="badge badge-indigo">Enterprise Reference Architecture</span>
+      <h1>Admit Third-Party Containers With <span>Cryptographic Assurance</span></h1>
+      <p>A 4-plane admission architecture binding security evidence, Open Policy Agent (OPA) Policy-as-Code evaluation, Cosign keyless attestations, and deployment verification to immutable cryptographic digests.</p>
+
+      <div class="hero-meta">
+        <div class="meta-box">
+          <label>Target Audience</label>
+          <span>Security, Platform & DevSecOps Teams</span>
+        </div>
+        <div class="meta-box">
+          <label>Policy Engine</label>
+          <span>Open Policy Agent (Rego v1)</span>
+        </div>
+        <div class="meta-box">
+          <label>Current Status</label>
+          <span>Experimental Reference Implementation</span>
         </div>
       </div>
-      
-      <div class="flow-step">
-        <div class="step-num">03</div>
-        <div class="step-card">
-          <h4>Dynamic Observation</h4>
-          <p>The image runs in a quarantine sandbox. Tracee uses eBPF syscall tracing to capture execution behaviors, and OWASP ZAP runs active DAST scans to block high risk alerts.</p>
-          <span class="step-badge prevention">Preventive</span>
+    </section>
+
+    <!-- 1. Executive Overview -->
+    <section id="overview">
+      <div class="section-header">
+        <h2>Executive Overview</h2>
+        <p>Eliminating third-party container supply chain risk through standardized admission governance.</p>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <h3>The Vendor Container Dilemma</h3>
+          <p>Modern applications rely heavily on pre-built third-party container images (e.g. database engines, automation nodes, proxy agents). Ingesting vendor images directly into production transfers external supply chain vulnerabilities, licensing liabilities, and compromised code straight into internal infrastructure.</p>
+        </div>
+        <div class="card">
+          <h3>ArtifactGate Solution</h3>
+          <p>ArtifactGate provides a structured reference architecture for admitting third-party artifacts. It resolves vendor tags to immutable SHA-256 digests, collects multi-dimensional evidence, evaluates standardized OPA policies, and enforces signed attestation predicates at deployment time.</p>
         </div>
       </div>
-      
-      <div class="flow-step">
-        <div class="step-num">04</div>
-        <div class="step-card">
-          <h4>Policy Evaluation</h4>
-          <p>Vulnerabilities are enriched with CISA KEV and FIRST EPSS metrics. Decisions are automated based on strict, reviewable fail-closed rules, forcing review for high-risk targets.</p>
-          <span class="step-badge prevention">Preventive</span>
+    </section>
+
+    <!-- 2. The Business Problem -->
+    <section id="problem">
+      <div class="section-header">
+        <h2>The Business Problem & Supply Chain Risk</h2>
+        <p>Software supply chain vulnerabilities are business risks requiring explicit admission controls.</p>
+      </div>
+      <div class="grid-3">
+        <div class="card">
+          <span class="badge badge-amber" style="margin-bottom:0.75rem;">Risk 1</span>
+          <h3>Unknown Origin</h3>
+          <p>Is the upstream container image genuinely published by the vendor? Has the publisher registry account or build pipeline been compromised?</p>
+        </div>
+        <div class="card">
+          <span class="badge badge-amber" style="margin-bottom:0.75rem;">Risk 2</span>
+          <h3>Mutable Tag Identity</h3>
+          <p>Container tags (`:latest`, `:v2`) can change silently upstream. A tag scanned in staging may resolve to completely different bytes when deployed to production.</p>
+        </div>
+        <div class="card">
+          <span class="badge badge-amber" style="margin-bottom:0.75rem;">Risk 3</span>
+          <h3>Unknown Composition</h3>
+          <p>Images may contain unpatched CISA KEV vulnerabilities, embedded API credentials, trojanized malware binaries, or copyleft licensing liabilities (AGPL-3.0).</p>
+        </div>
+        <div class="card">
+          <span class="badge badge-amber" style="margin-bottom:0.75rem;">Risk 4</span>
+          <h3>Inconsistent Risk Acceptance</h3>
+          <p>Exceptions are stored informally in developer tickets without expiration dates, accountable risk owners, or standardized evaluation thresholds.</p>
+        </div>
+        <div class="card">
+          <span class="badge badge-amber" style="margin-bottom:0.75rem;">Risk 5</span>
+          <h3>Post-Release Security Decay</h3>
+          <p>Vulnerabilities and active exploits are discovered continuously after image promotion. An image approved last month may harbor critical zero-days today.</p>
+        </div>
+        <div class="card">
+          <span class="badge badge-amber" style="margin-bottom:0.75rem;">Risk 6</span>
+          <h3>Deployment Bypass</h3>
+          <p>CI/CD pipeline scans are useless if deployment tools do not re-verify decision attestations and digests before launching containers in production.</p>
         </div>
       </div>
-      
-      <div class="flow-step">
-        <div class="step-num">05</div>
-        <div class="step-card">
-          <h4>Attestation & Signing</h4>
-          <p>Approved image pairs are promoted to GHCR. Cryptographic attestations (provenance, SBOM) and keyless signatures with OpenVEX exception rules are signed via Cosign.</p>
-          <span class="step-badge attestation">Attestation</span>
+    </section>
+
+    <!-- 3. Why Naive Approaches Fail -->
+    <section id="comparison">
+      <div class="section-header">
+        <h2>Why Naive Approaches Are Insufficient</h2>
+        <p>Common industry practices often fail to mitigate business risk.</p>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Common Practice</th>
+              <th>Why It Is Insufficient</th>
+              <th>ArtifactGate Controlled Approach</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Pull official vendor tag</strong></td>
+              <td>"Official" tags do not prove upstream build integrity or absence of vulnerability decay.</td>
+              <td>Strict source image allowlist & immutable SHA-256 digest pinning at intake.</td>
+            </tr>
+            <tr>
+              <td><strong>Scan image tag in CI</strong></td>
+              <td>Tags can change after scanning. Staging and production run different bytes.</td>
+              <td>Security decisions are strictly bound to immutable SHA-256 digests.</td>
+            </tr>
+            <tr>
+              <td><strong>Block Critical CVEs only</strong></td>
+              <td>CVSS severity ignores active exploitation (KEV) and real exploit probability (EPSS).</td>
+              <td>CISA KEV catalog blocking & EPSS probability threshold gating via OPA.</td>
+            </tr>
+            <tr>
+              <td><strong>Generate an SBOM</strong></td>
+              <td>An SBOM describes identified components; it does not evaluate policy acceptability.</td>
+              <td>SPDX 2.3 SBOM generated, attested keylessly, and evaluated against policy.</td>
+            </tr>
+            <tr>
+              <td><strong>Internal key signing</strong></td>
+              <td>Signing an un-assessed image internally provides false trust without evidence.</td>
+              <td>Attests explicit promotion decision predicates (`promotiondecision`) containing 4-digest pairing.</td>
+            </tr>
+            <tr>
+              <td><strong>One-time pre-release scan</strong></td>
+              <td>New KEV catalog entries and zero-day vulnerabilities emerge post-release.</td>
+              <td>Weekly automated cron re-scanning (`rescan.yml`) with issue generation.</td>
+            </tr>
+            <tr>
+              <td><strong>Unstructured exceptions</strong></td>
+              <td>Waivers stored in comments lack expiration dates, approvers, and auditability.</td>
+              <td>Machine-readable OpenVEX waiver contracts (`waiver.json`) with mandatory expiry.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 4. Requirements Specification -->
+    <section id="requirements">
+      <div class="section-header">
+        <h2>Admission Control Requirements</h2>
+        <p>What an enterprise container artifact admission system must deliver.</p>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Functional Requirements</h3>
+          <ul style="color: var(--text-muted); padding-left: 1.2rem; font-size: 0.95rem;">
+            <li>Bind all decisions to immutable SHA-256 digests & `linux/amd64` architecture.</li>
+            <li>Enforce upstream source image allowlists & version intake rules.</li>
+            <li>Collect static (CVE, secret, license, malware) & dynamic (eBPF) evidence.</li>
+            <li>Evaluate normalized evidence using versioned OPA Policy-as-Code.</li>
+            <li>Enforce machine-readable, time-bounded risk exceptions (OpenVEX).</li>
+            <li>Keylessly attest promotion decisions using OIDC identities via Cosign.</li>
+            <li>Verify attestation predicates at deployment time before container execution.</li>
+            <li>Re-scan promoted workloads weekly to challenge prior approval decisions.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Security & Risk Requirements</h3>
+          <ul style="color: var(--text-muted); padding-left: 1.2rem; font-size: 0.95rem;">
+            <li><strong>Fail-Closed Posture</strong>: Reject promotion if scan evidence is missing or malformed.</li>
+            <li><strong>Quarantine Isolation</strong>: Execute dynamic observation in bounded sandboxes.</li>
+            <li><strong>Least-Privilege OIDC</strong>: Restrict workflow permissions & keyless signing identities.</li>
+            <li><strong>Separation of Duties</strong>: Isolate policy owners from workload requestors.</li>
+            <li><strong>Immutable Audit Trails</strong>: Retain tamper-evident signed attestation records.</li>
+            <li><strong>Tag Drift Prevention</strong>: Enforce digest-only promotion and deployment paths.</li>
+          </ul>
         </div>
       </div>
-      
-      <div class="flow-step">
-        <div class="step-num">06</div>
-        <div class="step-card">
-          <h4>Admission & Re-Scan</h4>
-          <p>Workloads are digest-pinned. The <code>install.sh</code> script runs OIDC verification checks before boot. Weekly rescans check the promoted digest for post-release vulnerability decay.</p>
-          <span class="step-badge corrective">Corrective</span>
+    </section>
+
+    <!-- 5. Standards Mapping -->
+    <section id="standards">
+      <div class="section-header">
+        <h2>Recognized Guidance & Design Basis</h2>
+        <p>ArtifactGate's controls are <strong>informed by</strong> recognized industry standards.</p>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Guidance / Standard</th>
+              <th>How It Informs ArtifactGate</th>
+              <th>Control Implementation</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>NIST SP 800-161 Rev. 1</strong></td>
+              <td>Cybersecurity Supply Chain Risk Management (C-SCRM) controls.</td>
+              <td>Source allowlists, digest pinning, and weekly continuous re-scanning.</td>
+            </tr>
+            <tr>
+              <td><strong>NIST SP 800-190</strong></td>
+              <td>Application Container Security Guide recommendations.</td>
+              <td>Layer-by-layer scanning, secret detection, and Tracee eBPF syscall monitoring.</td>
+            </tr>
+            <tr>
+              <td><strong>NIST SP 800-218 (SSDF)</strong></td>
+              <td>Secure Software Development Framework component verification.</td>
+              <td>SPDX SBOM verification, OpenVEX exception handling, and OPA Policy gating.</td>
+            </tr>
+            <tr>
+              <td><strong>SLSA Framework</strong></td>
+              <td>Build provenance and build trust concepts.</td>
+              <td>Downstream promotion attestations (does not claim vendor SLSA build levels).</td>
+            </tr>
+            <tr>
+              <td><strong>Sigstore / Cosign</strong></td>
+              <td>Cryptographic identity & attestation signing.</td>
+              <td>Keyless OIDC signing of SLSA, SBOM, OpenVEX, and promotion predicates.</td>
+            </tr>
+            <tr>
+              <td><strong>Open Policy Agent (OPA)</strong></td>
+              <td>Declarative Policy-as-Code evaluation.</td>
+              <td>Rego policy modules (`policy/artifactgate/`) evaluating normalized `evidence.json`.</td>
+            </tr>
+            <tr>
+              <td><strong>CISA KEV & FIRST EPSS</strong></td>
+              <td>Active threat & exploit probability prioritization.</td>
+              <td>Real-time CISA KEV catalog lookup & explicit EPSS threshold gating ($\ge 2.0\%$).</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 6. Architecture Planes -->
+    <section id="architecture">
+      <div class="section-header">
+        <h2>4-Plane Admission Architecture</h2>
+        <p>Decoupling evidence collection, policy decisioning, and deployment enforcement.</p>
+      </div>
+      <div class="diagram-box">
+                    [ GOVERNANCE PLANE ]
+        Policies · Exceptions · Approvals · Risk Owners
+                              │
+                              ▼
+UNTRUSTED                ASSESSMENT              TRUSTED
+SOURCE                      PLANE                ARTIFACT
+
+Registry ──► Resolve ──► Evidence ──► OPA Decision ──► Promote + Attest
+              digest      store             │                 │
+                            │               v                 v
+                            └────────► [REJECTED]     Controlled Registry
+                                                              │
+                                                              v
+                                                       Admission Control
+                                                              │
+                                                              v
+                                                           Runtime
+                                                              │
+                                                              v
+                                                      Reassess / Revoke
+      </div>
+      <div class="grid-2" style="margin-top: 1.5rem;">
+        <div class="card">
+          <h3>1. Intake Plane</h3>
+          <p>Resolves upstream vendor references (`n8nio/n8n`) to immutable SHA-256 digests for `linux/amd64`. Verifies upstream allowlists before fetching container layers.</p>
+        </div>
+        <div class="card">
+          <h3>2. Assessment Plane</h3>
+          <p>Collects static vulnerability scans (Trivy), secret scans, license classifications, SPDX 2.3 SBOMs, ClamAV malware scans, and Tracee eBPF dynamic syscall observations in quarantine.</p>
+        </div>
+        <div class="card">
+          <h3>3. Decision Plane (OPA)</h3>
+          <p>Normalizes evidence into canonical `evidence.json`. OPA Rego modules evaluate findings against declarative rules and output structured decision predicates (`promotion-decision.json`).</p>
+        </div>
+        <div class="card">
+          <h3>4. Enforcement Plane</h3>
+          <p>Promotes approved digest pairs to protected GHCR registry paths. Keylessly signs Cosign attestations. `install.sh` verifies signatures and predicates before container initialization.</p>
         </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <section>
-    <p class="kicker">CONTROL INVENTORY</p>
-    <h2>Active Pipeline Control Mapping</h2>
-    <div class="table-scroll"><table class="rule-table">
-      <thead>
-        <tr>
-          <th scope="col">Question</th>
-          <th scope="col">Control</th>
-          <th scope="col">Risk Addressed</th>
-          <th scope="col">Function</th>
-          <th scope="col">Control Point</th>
-          <th scope="col">Enforcement</th>
-          <th scope="col">Source of Truth</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><code>01 Source</code></td>
-          <th scope="row">Source Ingestion Allowlist</th>
-          <td>Rogue tag intake & untrusted vendors</td>
-          <td>Preventive</td>
-          <td>Intake</td>
-          <td><strong>Blocking</strong></td>
-          <td><a href="https://github.com/llody9977/artifactgate/blob/main/policy/image-ingestion-policy.yml">image-ingestion-policy.yml</a></td>
-        </tr>
-        <tr>
-          <td><code>02 Identity</code></td>
-          <th scope="row">OCI Digest Resolution</th>
-          <td>Tag drift & tag poisoning</td>
-          <td>Preventive</td>
-          <td>Intake</td>
-          <td><strong>Blocking</strong></td>
-          <td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/workflows/image-promotion.yml">image-promotion.yml</a></td>
-        </tr>
-        <tr>
-          <td><code>03 Composition</code></td>
-          <th scope="row"><a href="https://aquasecurity.github.io/trivy/">Trivy</a> Secret Scan</th>
-          <td>Embedded secrets, tokens, and credentials</td>
-          <td>Preventive</td>
-          <td>Promotion Gate</td>
-          <td><strong>Blocking</strong></td>
-          <td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/workflows/image-promotion.yml">image-promotion.yml</a></td>
-        </tr>
-        <tr>
-          <td><code>03 Composition</code></td>
-          <th scope="row">ClamAV Malware Scan</th>
-          <td>Known trojans and malicious binaries</td>
-          <td>Preventive</td>
-          <td>Promotion Gate</td>
-          <td><strong>Blocking</strong></td>
-          <td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/workflows/image-promotion.yml">image-promotion.yml</a></td>
-        </tr>
-        <tr>
-          <td><code>04 Risk</code></td>
-          <th scope="row"><a href="https://www.zaproxy.org/">OWASP ZAP</a> DAST Scan</th>
-          <td>Runtime network / HTTP vulnerabilities</td>
-          <td>Preventive</td>
-          <td>Promotion Gate</td>
-          <td><strong>Blocking</strong></td>
-          <td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/scripts/run_tracee_reachability.sh">run_tracee_reachability.sh</a></td>
-        </tr>
-        <tr>
-          <td><code>03 Composition</code></td>
-          <th scope="row"><a href="https://aquasecurity.github.io/trivy/">Trivy</a> Licence Scan</th>
-          <td>Copyleft licence liabilities</td>
-          <td>Detective</td>
-          <td>Promotion Gate</td>
-          <td>Advisory</td>
-          <td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/workflows/image-promotion.yml">image-promotion.yml</a></td>
-        </tr>
-        <tr>
-          <td><code>04 Risk</code></td>
-          <th scope="row">Runtime eBPF (<a href="https://aquasecurity.github.io/tracee/">Tracee</a>) Observation</th>
-          <td>Logic bombs & active execution paths</td>
-          <td>Detective</td>
-          <td>Promotion Gate</td>
-          <td><strong>Blocking</strong> (Escalated on Observed)</td>
-          <td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/scripts/merge_tracee_reachability.py">merge_tracee_reachability.py</a></td>
-        </tr>
-        <tr>
-          <td><code>04 Risk</code></td>
-          <th scope="row">Vulnerability Risk Enrichment</th>
-          <td>Vulnerability exploitation (<a href="https://www.cisa.gov/known-exploited-vulnerabilities-catalog">KEV</a>/<a href="https://www.first.org/epss/">EPSS</a>/Age)</td>
-          <td>Preventive</td>
-          <td>Promotion Gate</td>
-          <td><strong>Blocking</strong></td>
-          <td><a href="https://github.com/llody9977/artifactgate/blob/main/policy/vulnerability-gate-policy.yml">vulnerability-gate-policy.yml</a></td>
-        </tr>
-        <tr>
-          <td><code>01 Source / 05 Decision</code></td>
-          <th scope="row">Actions SHA Pinning & Tokens</th>
-          <td>Pipeline takeover & third-party compromises</td>
-          <td>Preventive</td>
-          <td>Build / Pipeline</td>
-          <td><strong>Blocking</strong></td>
-          <td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/workflows/ci.yml">Workflow Configurations</a></td>
-        </tr>
-        <tr>
-          <td><code>02 Identity / 06 Continuity</code></td>
-          <th scope="row">OIDC Provenance & SBOM (<a href="https://openvex.dev/">OpenVEX</a>)</th>
-          <td>Registry bypass & image swapping</td>
-          <td>Preventive</td>
-          <td>Attestation / Deploy</td>
-          <td><strong>Blocking</strong></td>
-          <td><a href="https://github.com/llody9977/artifactgate/blob/main/iac/n8n/install.sh">install.sh</a></td>
-        </tr>
-        <tr>
-          <td><code>06 Continuity</code></td>
-          <th scope="row">Continuous Re-Scanning</th>
-          <td>Post-promotion security decay</td>
-          <td>Corrective</td>
-          <td>Continuous</td>
-          <td><strong>Blocking</strong> (Opens Issues)</td>
-          <td><a href="https://github.com/llody9977/artifactgate/blob/main/.github/workflows/rescan.yml">rescan.yml</a></td>
-        </tr>
-      </tbody>
-    </table></div>
-    <p class="note">Policy changes go through the same protected pull-request path as code. The readable YAML documents intent; the workflow and enrichment script enforce the executable decision.</p>
-  </section>
+    <!-- 7. OPA Policy Model -->
+    <section id="opa-policy">
+      <div class="section-header">
+        <h2>Open Policy Agent (OPA) Policy-as-Code Engine</h2>
+        <p>Scanners collect evidence. OPA decides acceptability.</p>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <h3>10 Declarative Policy Domains</h3>
+          <ul style="color: var(--text-muted); font-size: 0.9rem; padding-left: 1.2rem;">
+            <li><strong>POL-SRC</strong>: Source allowlists (`n8nio/n8n`, `n8nio/runners`)</li>
+            <li><strong>POL-ID</strong>: Platform architecture (`linux/amd64`) & digest binding</li>
+            <li><strong>POL-EVD</strong>: Scanner completion flags & policy hash integrity</li>
+            <li><strong>POL-VULN</strong>: CISA KEV catalog & EPSS exploit probability gating</li>
+            <li><strong>POL-LIC</strong>: Prohibited copyleft & legal review license rules</li>
+            <li><strong>POL-SEC</strong>: Secret detection & ClamAV malware blocking</li>
+            <li><strong>POL-PROV</strong>: Upstream publisher signatures & SLSA attestations</li>
+            <li><strong>POL-RUN</strong>: Tracee eBPF application tracing & runner exemptions</li>
+            <li><strong>POL-EXC</strong>: OpenVEX waiver expiration & accepted CVE coverage</li>
+            <li><strong>POL-DEC</strong>: Root aggregator producing standard outcome verdicts</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>7 Standardized Outcome Verdicts</h3>
+          <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem;">
+            <div><span class="badge badge-emerald">APPROVED</span> <span style="font-size:0.85rem; color:var(--text-muted);">Zero blocking or review findings. Auto-promoted.</span></div>
+            <div><span class="badge badge-indigo">APPROVED_WITH_EXCEPTION</span> <span style="font-size:0.85rem; color:var(--text-muted);">Active, unexpired waiver covers CVEs.</span></div>
+            <div><span class="badge badge-amber">MANUAL_REVIEW</span> <span style="font-size:0.85rem; color:var(--text-muted);">Review-required items exist (EPSS, runner exemption).</span></div>
+            <div><span class="badge badge-rose">REJECTED</span> <span style="font-size:0.85rem; color:var(--text-muted);">Blocking policy violations exist (KEV, malware, AGPL).</span></div>
+            <div><span class="badge badge-amber">EXPIRED</span> <span style="font-size:0.85rem; color:var(--text-muted);">Previously valid waiver has exceeded expiration.</span></div>
+            <div><span class="badge badge-rose">REVOKED</span> <span style="font-size:0.85rem; color:var(--text-muted);">Previously approved artifact revoked during re-scan.</span></div>
+            <div><span class="badge badge-rose">ERROR</span> <span style="font-size:0.85rem; color:var(--text-muted);">Missing evidence or malformed JSON input.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
 
-  <section>
-    <p class="kicker">STANDARDS-INFORMED, NOT CERTIFIED</p>
-    <h2>Grounded in established supply-chain guidance</h2>
-    <div class="standards">
-      <article><h3><a href="https://csrc.nist.gov/pubs/sp/800/161/r1/upd1/final">NIST SP 800-161 Rev. 1</a></h3><p>Third-party technology is a supply-chain risk requiring due diligence, assessment, mitigation and continuing oversight.</p></article>
-      <article><h3><a href="https://csrc.nist.gov/pubs/sp/800/190/final">NIST SP 800-190</a></h3><p>Informs trusted-image handling, registry controls, vulnerability management and hardened container configuration.</p></article>
-      <article><h3><a href="https://csrc.nist.gov/pubs/sp/800/218/final">NIST SP 800-218</a></h3><p>Informs third-party component verification (practices PO.1.3, PO.3.2, PW.4.1, PW.4.4, RV.1.1, RV.1.3).</p></article>
-      <article><h3><a href="https://csrc.nist.gov/pubs/sp/800/204/d/final">NIST SP 800-204D</a></h3><p>Frames how provenance, attestations, SBOMs and supply-chain controls fit into CI/CD.</p></article>
-      <article><h3><a href="https://slsa.dev/spec/v1.2/">SLSA v1.2</a></h3><p>Provides a model for provenance. ArtifactGate's promotion steps exhibit SLSA Build L2/L3 properties.</p></article>
-      <article><h3><a href="https://digital-strategy.ec.europa.eu/en/policies/cyber-resilience-act">EU CRA</a> &amp; <a href="https://www.ntia.doc.gov/files/ntia/publications/sbom_minimum_elements_report.pdf">NTIA Elements</a></h3><p>Aligns with NTIA Minimum Elements for an SBOM and EU Cyber Resilience Act VEX vulnerability reporting rules.</p></article>
-    </div>
-  </section>
+    <!-- 8. Real Decision Output -->
+    <section id="decision-output">
+      <div class="section-header">
+        <h2>OPA Standard Decision Payload</h2>
+        <p>Machine-readable promotion decision predicate attached to Cosign attestations.</p>
+      </div>
+      <div class="code-block">
+{
+  "status": "MANUAL_REVIEW",
+  "policy_version": "2026.07",
+  "blocking_findings": 0,
+  "review_findings": 2,
+  "findings": [
+    {
+      "rule_id": "VULN-003",
+      "category": "vulnerability",
+      "severity": "review",
+      "subject": "CVE-2026-4321",
+      "message": "High vulnerability CVE-2026-4321 exceeds EPSS threshold (EPSS: 0.0450)",
+      "remediation": "Review EPSS risk or submit active waiver"
+    },
+    {
+      "rule_id": "RNT-002",
+      "category": "runtime",
+      "severity": "info",
+      "subject": "runner_runtime_exemption",
+      "message": "Task runner dynamic observation is explicitly exempted under policy rule runtime.runner.exemption",
+      "remediation": "Assurance gap recorded in decision predicate"
+    }
+  ]
+}
+      </div>
+    </section>
 
-  <section id="evidence" class="evidence">
-    <p class="kicker">PUBLIC EVIDENCE</p>
-    <h2>Latest retained promotion</h2>
-    <dl id="release"><dt>Status</dt><dd>Loading release evidence…</dd></dl>
-    <p><a id="release-link" href="https://github.com/llody9977/artifactgate/releases">Open release record</a></p>
-  </section>
+    <!-- 9. Control Matrix -->
+    <section id="controls">
+      <div class="section-header">
+        <h2>Authoritative Control Enforcement Matrix</h2>
+        <p>Honest inventory of implemented controls, enforcement behavior, and production gaps.</p>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Control Name</th>
+              <th>Status</th>
+              <th>Enforcement</th>
+              <th>Capability & Production Gap</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Source Allowlist</strong></td>
+              <td><span class="badge badge-emerald">Implemented</span></td>
+              <td>Blocking</td>
+              <td>Enforces allowed upstream repos (`n8nio/n8n`, `n8nio/runners`) in OPA `source.rego`.</td>
+            </tr>
+            <tr>
+              <td><strong>Digest Pinning</strong></td>
+              <td><span class="badge badge-emerald">Implemented</span></td>
+              <td>Blocking</td>
+              <td>Binds intake and promotion strictly to immutable SHA-256 digests for `linux/amd64`.</td>
+            </tr>
+            <tr>
+              <td><strong>Vulnerability Policy</strong></td>
+              <td><span class="badge badge-emerald">Implemented</span></td>
+              <td>Blocking / Review</td>
+              <td>Enforces CISA KEV blocking, EPSS thresholds, and max age via OPA `vulnerabilities.rego`.</td>
+            </tr>
+            <tr>
+              <td><strong>Secret Scanning</strong></td>
+              <td><span class="badge badge-emerald">Implemented</span></td>
+              <td>Blocking</td>
+              <td>Scans container layers via Trivy and blocks credentials via OPA `secrets.rego`.</td>
+            </tr>
+            <tr>
+              <td><strong>Malware Scanning</strong></td>
+              <td><span class="badge badge-emerald">Implemented</span></td>
+              <td>Blocking</td>
+              <td>Scans container payloads via ClamAV and blocks malware signatures via OPA `malware.rego`.</td>
+            </tr>
+            <tr>
+              <td><strong>Licence Classification</strong></td>
+              <td><span class="badge badge-emerald">Implemented</span></td>
+              <td>Advisory</td>
+              <td>Classifies licenses and flags prohibited copyleft licenses (AGPL) via OPA `licenses.rego`.</td>
+            </tr>
+            <tr>
+              <td><strong>App Runtime Observation</strong></td>
+              <td><span class="badge badge-emerald">Implemented</span></td>
+              <td>Blocking</td>
+              <td>Audits system calls and library loads during quarantine execution via Tracee eBPF.</td>
+            </tr>
+            <tr>
+              <td><strong>Runner Runtime Observation</strong></td>
+              <td><span class="badge badge-amber">Exempted</span></td>
+              <td>Advisory</td>
+              <td>Task runner dynamic observation is explicitly exempted (`EXEMPTED`) under policy.</td>
+            </tr>
+            <tr>
+              <td><strong>OWASP ZAP Web Scan</strong></td>
+              <td><span class="badge badge-indigo">Limited Scope</span></td>
+              <td>Advisory</td>
+              <td>Unauthenticated baseline web scan providing passive web interface exposure observations.</td>
+            </tr>
+            <tr>
+              <td><strong>Promotion Attestation</strong></td>
+              <td><span class="badge badge-emerald">Implemented</span></td>
+              <td>Blocking (Installer)</td>
+              <td>Keylessly signs and attaches `promotiondecision` predicates to promoted images in GHCR.</td>
+            </tr>
+            <tr>
+              <td><strong>Deployment Admission</strong></td>
+              <td><span class="badge badge-emerald">Implemented</span></td>
+              <td>Blocking (`install.sh`)</td>
+              <td>`install.sh` verifies Cosign signatures, SLSA provenance, OpenVEX, and 4-digest pairing.</td>
+            </tr>
+            <tr>
+              <td><strong>K8s Admission Controller</strong></td>
+              <td><span class="badge badge-rose">Not Implemented</span></td>
+              <td>None</td>
+              <td>Production adoption requires a Kubernetes admission controller (Kyverno / Sigstore policy-controller).</td>
+            </tr>
+            <tr>
+              <td><strong>Scheduled Re-scanning</strong></td>
+              <td><span class="badge badge-emerald">Implemented</span></td>
+              <td>Issue Creation</td>
+              <td>`rescan.yml` re-scans promoted images weekly; creates GitHub issues on vulnerability decay.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
 
-  <section>
-    <p class="kicker">VERIFY, DO NOT ASSUME</p>
-    <h2>Bind the decision to the bytes deployed</h2>
-    <pre><code>gh attestation verify oci://IMAGE@sha256:DIGEST -o llody9977</code></pre>
-    <p>Verify both the n8n application and external runner subjects, then deploy both by immutable digest. The promotion attestation proves that ArtifactGate's workflow handled those digests; it does not recreate missing provenance for the vendor's original build.</p>
-  </section>
+    <!-- 10. Case Studies -->
+    <section id="incidents">
+      <div class="section-header">
+        <h2>Engineering Case Studies & Control Derivations</h2>
+        <p>Real supply chain failures mapped to derived admission controls.</p>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <span class="badge badge-rose" style="margin-bottom:0.75rem;">Case 1</span>
+          <h3>`tj-actions/changed-files` (Action Compromise)</h3>
+          <p><strong>Failure Mode</strong>: Mutable release tags (`:v40`) were hijacked upstream to execute malicious secret exfiltration code.</p>
+          <p><strong>ArtifactGate Control</strong>: All workflow actions and container intake resolve strictly to immutable SHA-256 commit digests.</p>
+        </div>
+        <div class="card">
+          <span class="badge badge-rose" style="margin-bottom:0.75rem;">Case 2</span>
+          <h3>XZ Utils Backdoor (Targeted Logic Bomb)</h3>
+          <p><strong>Failure Mode</strong>: Trusted maintainer inserted build-time backdoor into tarball sources that bypassed static code review.</p>
+          <p><strong>ArtifactGate Control</strong>: Tracee kernel eBPF dynamic syscall observation monitors unexpected binary execution in quarantine.</p>
+        </div>
+        <div class="card">
+          <span class="badge badge-rose" style="margin-bottom:0.75rem;">Case 3</span>
+          <h3>SolarWinds (Vendor Build Compromise)</h3>
+          <p><strong>Failure Mode</strong>: Valid vendor code-signing certificates signed malicious build updates (`SUNBURST`).</p>
+          <p><strong>ArtifactGate Control</strong>: Independently evaluates security evidence and attests downstream promotion predicates (`promotiondecision`).</p>
+        </div>
+        <div class="card">
+          <span class="badge badge-rose" style="margin-bottom:0.75rem;">Case 4</span>
+          <h3>Equifax Apache Struts (Remediation SLA Breakdown)</h3>
+          <p><strong>Failure Mode</strong>: Known CVE-2017-5638 patch existed but unpatched application remained exposed for months.</p>
+          <p><strong>ArtifactGate Control</strong>: OpenVEX waivers enforce accountable risk owners, expiration dates (`expires_on`), and active CVE coverage validation.</p>
+        </div>
+      </div>
+    </section>
 
-  <section class="boundary">
-    <p class="kicker">ASSURANCE BOUNDARY</p>
-    <h2>Promotion is a risk decision, not a security certificate</h2>
-    <p>A successful result means the exact pair passed the documented policy or a scoped, justified and expiring exception was approved. It does not mean vulnerability-free, compliant or suitable for every environment. SBOMs and scanner feeds may be incomplete or delayed. Runtime observations cover only exercised smoke-test paths, and “not observed” is not proof that vulnerable code is unreachable.</p>
-  </section>
+    <!-- 11. Operational Maturity Roadmap -->
+    <section id="maturity">
+      <div class="section-header">
+        <h2>Operational Maturity Roadmap (Levels 0–5)</h2>
+        <p>Honest evaluation of ArtifactGate's current reference implementation level.</p>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Maturity Level</th>
+              <th>Capability Focus</th>
+              <th>ArtifactGate Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Level 0 — Basic Visibility</strong></td>
+              <td>Scan third-party artifacts, generate SBOMs, retain scan reports.</td>
+              <td><span class="badge badge-emerald">Achieved</span></td>
+            </tr>
+            <tr>
+              <td><strong>Level 1 — Controlled Decision</strong></td>
+              <td>Digest binding, standardized OPA policy, machine-readable decision, expiring waivers.</td>
+              <td><span class="badge badge-emerald">Achieved</span></td>
+            </tr>
+            <tr>
+              <td><strong>Level 2 — Controlled Promotion</strong></td>
+              <td>Separate trusted registry, keyless Cosign attestations, pipeline protection.</td>
+              <td><span class="badge badge-emerald">Achieved</span></td>
+            </tr>
+            <tr>
+              <td><strong>Level 3 — Deployment Admission</strong></td>
+              <td>Kubernetes admission controller enforcement, digest-only runtime policies.</td>
+              <td><span class="badge badge-amber">Partial (Installer Only)</span></td>
+            </tr>
+            <tr>
+              <td><strong>Level 4 — Continuous Assurance</strong></td>
+              <td>Automated re-scanning, exception revocation, running workload asset inventory.</td>
+              <td><span class="badge badge-amber">Partial (Cron Issue Creation)</span></td>
+            </tr>
+            <tr>
+              <td><strong>Level 5 — Organizational Service</strong></td>
+              <td>Centralized OPA policy bundles, multi-cloud reporting, compliance SLOs.</td>
+              <td><span class="badge badge-rose">Roadmap Target</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
 
-  <section class="boundary">
-    <p class="kicker">OUT OF SCOPE</p>
-    <h2>What ArtifactGate structurally cannot do</h2>
-    <div class="standards">
-      <article>
-        <h3>Detect Obfuscated Backdoors</h3>
-        <p>It cannot find custom, obfuscated logic bombs in source dependencies through static scans. Runtime eBPF monitoring flags anomalous actions, but only on paths exercised by tests.</p>
-      </article>
-      <article>
-        <h3>Verify Vendor Build Integrity</h3>
-        <p>Absent upstream cryptographic provenance, the gate only proves that the image matches a resolved digest. It cannot prove that the vendor's build pipeline was secure or untampered.</p>
-      </article>
-      <article>
-        <h3>Assess Application Logic</h3>
-        <p>The gate runs dynamic smoketests and generic vulnerability scans. It cannot perform custom application-layer penetration testing or verify the logical correctness of n8n workflows.</p>
-      </article>
-      <article>
-        <h3>Guarantee Day-Zero Immunity</h3>
-        <p>A promoted image is only clean against known datasets at the time of scanning. A zero-day exploit or delayed CVE registration will bypass the promotion gate.</p>
-      </article>
-    </div>
-  </section>
+  </main>
 
   <footer>
-    <p class="disclaimer">Disclaimer: ArtifactGate is a personal, experimental reference project. It is not affiliated with, endorsed by, or certified by n8n, CIS, CISA, NIST, OWASP, Sigstore, Aqua Security, or GitHub. Read the full disclaimer on the repository homepage.</p>
-    <p>© 2026 <a href="https://github.com/llody9977">llody9977</a> · <a href="https://github.com/llody9977/artifactgate/blob/main/LICENSE">Apache-2.0</a> · Personal and experimental · <a href="https://github.com/llody9977/artifactgate#disclaimer">Full disclaimer</a></p></footer>
-</main>
-<script>
-fetch('evidence.json').then(response => {
-  if (!response.ok) throw new Error('Evidence unavailable');
-  return response.json();
-}).then(release => {
-  const list = document.querySelector('#release');
-  list.replaceChildren();
-  const rows = [
-    ['Release', release.name || release.tag_name || 'Unnamed release'],
-    ['Published', release.published_at ? new Date(release.published_at).toLocaleString() : 'Unknown']
-  ];
-  for (const [label, value] of rows) {
-    const term = document.createElement('dt');
-    const detail = document.createElement('dd');
-    term.textContent = label;
-    detail.textContent = value;
-    list.append(term, detail);
-  }
-  if (release.html_url) document.querySelector('#release-link').href = release.html_url;
-}).catch(() => {
-  document.querySelector('#release').innerHTML = '<dt>Status</dt><dd>Release evidence is temporarily unavailable.</dd>';
-});
-</script>
+    <div class="container">
+      <p>ArtifactGate — Enterprise Container Admission Architecture & Reference Implementation.</p>
+      <p style="margin-top: 0.5rem;">
+        <a href="https://github.com/llody9977/artifactgate" target="_blank">GitHub Repository</a> | 
+        <a href="docs/requirements.md">Requirements Spec</a> | 
+        <a href="docs/threat-model.md">Threat Model</a> | 
+        <a href="docs/policy-model.md">OPA Policy Engine</a> | 
+        <a href="docs/standards-mapping.md">Standards Mapping</a>
+      </p>
+    </div>
+  </footer>
+
 </body>
 </html>
