@@ -139,16 +139,20 @@
 
       <div class="hero-meta">
         <div class="meta-box">
-          <label>Target Audience</label>
-          <span>Security, Platform & DevSecOps Teams</span>
+          <label>Latest Release Tag</label>
+          <span id="release-tag-display"><span class="badge badge-emerald">n8n-2.30.3</span></span>
+        </div>
+        <div class="meta-box">
+          <label>Target Package Names</label>
+          <span>n8n-trusted & n8n-runners-trusted</span>
         </div>
         <div class="meta-box">
           <label>Policy Engine</label>
           <span>Open Policy Agent (Rego v1)</span>
         </div>
         <div class="meta-box">
-          <label>Current Status</label>
-          <span>Experimental Reference Implementation</span>
+          <label>Maturity Status</label>
+          <span>Reference Implementation</span>
         </div>
       </div>
     </section>
@@ -663,18 +667,21 @@ Registry ──► Resolve ──► Evidence ──► OPA Decision ──► P
 
   </main>
 
-  <footer>
-    <div class="container">
-      <p>ArtifactGate — Enterprise Container Admission Architecture & Reference Implementation.</p>
-      <p style="margin-top: 0.5rem;">
-        <a href="https://github.com/llody9977/artifactgate" target="_blank">GitHub Repository</a> | 
-        <a href="docs/requirements.md">Requirements Spec</a> | 
-        <a href="docs/threat-model.md">Threat Model</a> | 
-        <a href="docs/policy-model.md">OPA Policy Engine</a> | 
-        <a href="docs/standards-mapping.md">Standards Mapping</a>
-      </p>
-    </div>
   </footer>
+
+  <script>
+    fetch('https://api.github.com/repos/llody9977/artifactgate/releases/latest')
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.tag_name) {
+          const el = document.getElementById('release-tag-display');
+          if (el) {
+            el.innerHTML = '<a href="' + (data.html_url || '#') + '" target="_blank" style="text-decoration:none;"><span class="badge badge-emerald">' + data.tag_name + '</span></a>';
+          }
+        }
+      })
+      .catch(() => {});
+  </script>
 
 </body>
 </html>
