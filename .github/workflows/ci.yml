@@ -21,13 +21,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
-      - name: ShellCheck Scripts
+      - name: ShellCheck Scripts & Policy Tests
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y shellcheck > /dev/null
           echo "Running ShellCheck on bash scripts..."
           shellcheck iac/n8n/install.sh iac/n8n/upgrade.sh .github/scripts/*.sh
           python3 .github/scripts/test_validate_compose.py
+
+      - name: Install OPA & Test Rego Policies
+        run: |
+          curl -sL -o /tmp/opa https://github.com/open-policy-agent/opa/releases/download/v1.18.2/opa_linux_amd64_static
+          chmod +x /tmp/opa
+          /tmp/opa test policy/artifactgate/ policy/data/ policy/tests/
+          python3 .github/scripts/test_opa_remediations.py
 
       - name: IaC Scan (Checkov)
         uses: bridgecrewio/checkov-action@7b972723c44fb3d256283fac96fae5d7c1894bb7 # master

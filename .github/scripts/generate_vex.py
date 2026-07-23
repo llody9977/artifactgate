@@ -19,8 +19,10 @@ def main():
     generated = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
     report_digest = hashlib.sha256(json.dumps(report, sort_keys=True).encode()).hexdigest()
     metadata = report.get("Metadata", {})
-    app_product = f"pkg:oci/n8n@{metadata.get('imageDigest', 'unknown')}?repository_url=ghcr.io/llody9977/artifactgate/n8n-trusted"
-    runner_product = f"pkg:oci/n8n-runners@{metadata.get('runnerDigest', 'unknown')}?repository_url=ghcr.io/llody9977/artifactgate/n8n-runners-trusted"
+    app_digest = metadata.get('imageDigest', 'unknown')
+    runner_digest = metadata.get('runnerDigest', 'unknown')
+    app_product = f"pkg:oci/n8n@{app_digest}?repository_url=ghcr.io/llody9977/artifactgate/n8n-trusted"
+    runner_product = f"pkg:oci/n8n-runners@{runner_digest}?repository_url=ghcr.io/llody9977/artifactgate/n8n-runners-trusted"
     vex = {
         "@context": "https://openvex.dev/ns/v0.2.0",
         "@id": f"https://github.com/llody9977/artifactgate/vex/{report_digest}",
@@ -47,6 +49,7 @@ def main():
                     "vulnerability": {"name": vuln_id},
                     "products": [{"@id": product}],
                     "status": "under_investigation",
+                    "timestamp": generated,
                     "impact_statement": f"Files mapped to {pkg_name} were not observed in the bounded Tracee smoke test. This is supporting evidence only and does not prove that vulnerable code is unreachable."
                 }
                 vex["statements"].append(statement)
@@ -55,6 +58,7 @@ def main():
                     "vulnerability": {"name": vuln_id},
                     "products": [{"@id": product}],
                     "status": "under_investigation",
+                    "timestamp": generated,
                     "impact_statement": f"{pkg_name} auto-promoted since it lacks KEV evidence, high EPSS, or aged exposure."
                 }
                 vex["statements"].append(statement)
@@ -63,3 +67,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

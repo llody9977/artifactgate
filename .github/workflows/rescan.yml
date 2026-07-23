@@ -224,9 +224,23 @@ jobs:
             [ "$UNKNOWN_AGE_REVIEW_COUNT" -gt 0 ] && ALERT_BODY="$ALERT_BODY- ❓ **$UNKNOWN_AGE_REVIEW_COUNT** critical/high CVE(s) have unknown published dates\n"
             [ "$WAIVER_EXPIRED" = true ] && ALERT_BODY="$ALERT_BODY- ⌛ The attached promotion waiver has expired\n"
             echo "  ⚠️  Alert triggered for $VERSION"
+
+            cat << EOF > revocation-decision.json
+{
+  "schemaVersion": "1.0",
+  "status": "REVOKED",
+  "reason": "Security decay: promoted image no longer satisfies policy thresholds without active waiver",
+  "revokedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "targetVersion": "$VERSION",
+  "applicationDigest": "${APP_DIG:-unknown}",
+  "runnerDigest": "${RUN_DIG:-unknown}"
+}
+EOF
+            echo "🚨 Generated revocation decision predicate: revocation-decision.json"
           else
             echo "  ✅ $VERSION remains auto-eligible"
           fi
+
 
           # Build JSON array of successfully scanned versions
           SCANNED_VERSIONS_JSON=$(echo "$SCANNED_TAGS" | tr ' ' '\n' | grep -v '^$' | jq -R . | jq -s -c .)

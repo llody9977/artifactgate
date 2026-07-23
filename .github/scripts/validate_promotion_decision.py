@@ -80,12 +80,31 @@ def validate_predicate(predicate_path, expected_app_promoted_digest, expected_ru
         print(f"❌ ADMISSION ERROR: Runner promoted digest '{runner_promoted}' does not match expected '{expected_runner_promoted_digest}'.", file=sys.stderr)
         return False
 
-    # Policy Hashes
-    for p_key in ["vulnerabilityPolicyHash", "ingestionPolicyHash", "licensePolicyHash"]:
+    # Independent Policy Hash Verification (Fail-Closed)
+    policy_files = {
+        "vulnerabilityPolicyHash": "policy/vulnerability-gate-policy.yml",
+        "ingestionPolicyHash": "policy/image-ingestion-policy.yml",
+        "licensePolicyHash": "policy/license-policy.yml",
+        "runtimePolicyHash": "policy/runtime-hardening-policy.yml"
+    }
+
+    for p_key, p_file in policy_files.items():
         p_val = policy.get(p_key)
         if not p_val or not str(p_val).startswith("sha256:"):
             print(f"❌ ADMISSION ERROR: Missing or invalid policy hash '{p_key}' in predicate.", file=sys.stderr)
             return False
+
+        if os.path.exists(p_file):
+            import hashlib
+            with open(p_file, "rb") as pf:
+                calc_hash = f"sha256:{hashlib.sha256(pf.read()).hexdigest()}"
+            if p_val != calc_hash:
+                print(f"❌ ADMISSION ERROR: Predicate policy hash '{p_key}' ({p_val}) does not match local policy file '{p_file}' ({calc_hash}).", file=sys.stderr)
+                return False
+        else:
+            print(f"❌ ADMISSION ERROR: Required policy file '{p_file}' is missing locally; policy integrity cannot be independently verified.", file=sys.stderr)
+            return False
+
 
     # Evidence Completion Flags & Explicit Runtime Statuses
     evidence = data.get("evidence", {})
@@ -111,6 +130,43 @@ def validate_predicate(predicate_path, expected_app_promoted_digest, expected_ru
     if run_rt != "EXEMPTED":
         print(f"❌ ADMISSION ERROR: Runner runtime observation status '{run_rt}' is not 'EXEMPTED'.", file=sys.stderr)
         return False
+
+    # Validate Structured Runner Runtime Exemption
+    run_rt_exemption = evidence.get("runnerRuntimeExemption", {})
+    if not isinstance(run_rt_exemption, dict) or run_rt_exemption.get("status") != "EXEMPTED":
+        print("❌ ADMISSION ERROR: Missing or invalid runnerRuntimeExemption structure.", file=sys.stderr)
+        return False
+    ex_details = run_rt_exemption.get("exemption", {})
+    if not ex_details or ex_details.get("policyRule") != "runtime.runner.exemption":
+        print("❌ ADMISSION ERROR: Runner runtime exemption missing valid policyRule 'runtime.runner.exemption'.", file=sys.stderr)
+        return False
+    review_on = ex_details.get("reviewOn")
+    if review_on:
+        try:
+            exp_date = datetime.strptime(review_on, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            if exp_date <= datetime.now(timezone.utc):
+                print(f"❌ ADMISSION ERROR: Runner runtime exemption review date '{review_on}' is expired.", file=sys.stderr)
+                return False
+        except Exception as exc:
+            print(f"❌ ADMISSION ERROR: Invalid reviewOn date '{review_on}' in runner exemption: {exc}", file=sys.stderr)
+            return False
+
+    # Optional Transformation Attestation Check (if file present in workspace)
+    if os.path.exists("transformation-attestation.json"):
+        try:
+            with open("transformation-attestation.json", "r", encoding="utf-8") as tf:
+                trans_data = json.load(tf)
+            app_dest = trans_data.get("application", {}).get("destination", "")
+            runner_dest = trans_data.get("runner", {}).get("destination", "")
+            if app_promoted not in app_dest:
+                print(f"❌ ADMISSION ERROR: Transformation attestation application destination '{app_dest}' does not match promoted digest '{app_promoted}'.", file=sys.stderr)
+                return False
+            if runner_promoted not in runner_dest:
+                print(f"❌ ADMISSION ERROR: Transformation attestation runner destination '{runner_dest}' does not match promoted digest '{runner_promoted}'.", file=sys.stderr)
+                return False
+        except Exception as exc:
+            print(f"❌ ADMISSION ERROR: Failed to parse transformation-attestation.json: {exc}", file=sys.stderr)
+            return False
 
     manifest_hash = evidence.get("evidenceManifestHash")
     if not manifest_hash or not str(manifest_hash).startswith("sha256:"):

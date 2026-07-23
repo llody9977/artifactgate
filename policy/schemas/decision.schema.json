@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ArtifactGate Standard Policy Decision Schema",
+  "type": "object",
+  "required": [
+    "status",
+    "policy_version",
+    "blocking_findings",
+    "review_findings",
+    "findings"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["APPROVED", "APPROVED_WITH_EXCEPTION", "MANUAL_REVIEW", "REJECTED"]
+    },
+    "policy_version": {
+      "type": "string"
+    },
+    "blocking_findings": {
+      "type": "integer"
+    },
+    "review_findings": {
+      "type": "integer"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["rule_id", "category", "severity", "subject", "message"],
+        "properties": {
+          "rule_id": { "type": "string" },
+          "category": { "type": "string" },
+          "severity": { "type": "string", "enum": ["block", "review", "warn", "info"] },
+          "subject": { "type": "string" },
+          "message": { "type": "string" },
+          "remediation": { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -182,3 +182,14 @@ controls:
     enforcement: automated
     check: "No volume contains docker.sock"
     implementation: "Volumes: only n8n_storage named volume"
+
+runner_exemption:
+  rule_id: "runtime.runner.exemption"
+  approved_by: "security-team"
+  risk_owner: "infrastructure-lead"
+  reason: "Task runner dynamic observation exempt under security policy (isolated execution)"
+  compensating_controls:
+    - "ephemeral_container_isolation"
+    - "no_host_filesystem_mount"
+  review_on: "2026-08-01"
+

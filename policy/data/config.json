@@ -1,0 +1,48 @@
+{
+  "config": {
+    "trusted_sources": {
+      "allowed_sources": [
+        "n8nio/n8n",
+        "n8nio/runners"
+      ],
+      "allowed_platforms": [
+        "linux/amd64"
+      ]
+    },
+    "vulnerability_policy": {
+      "block_kev": true,
+      "block_severities": ["CRITICAL"],
+      "manual_review_severities": ["HIGH"],
+      "epss_high_threshold": 0.02,
+      "epss_critical_threshold": 0.10,
+      "max_age_days": 30,
+      "block_preauth_network": true
+    },
+    "license_policy": {
+      "allowed": [
+        "MIT",
+        "Apache-2.0",
+        "BSD-2-Clause",
+        "BSD-3-Clause",
+        "ISC",
+        "0BSD",
+        "CC0-1.0",
+        "Python-2.0"
+      ],
+      "review_required": [
+        "MPL-2.0",
+        "LGPL-2.1-only",
+        "LGPL-3.0-only",
+        "EPL-1.0",
+        "EPL-2.0"
+      ],
+      "prohibited": [
+        "GPL-2.0-only",
+        "GPL-3.0-only",
+        "AGPL-3.0-only",
+        "SSPL-1.0"
+      ],
+      "unknown_action": "review"
+    }
+  }
+}

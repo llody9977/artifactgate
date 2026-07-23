@@ -1,8 +1,20 @@
-# Architecture and Trust Model
+# Enterprise Admission Architecture & Trust Model
 
-## Purpose
+> **Documentation Index**:
+> - [Requirements Specification](file:///Users/llody/Documents/artifactgate/docs/requirements.md)
+> - [Threat Model & Business Risk](file:///Users/llody/Documents/artifactgate/docs/threat-model.md)
+> - [Policy-as-Code & OPA Model](file:///Users/llody/Documents/artifactgate/docs/policy-model.md)
+> - [Standards & Guidance Mapping](file:///Users/llody/Documents/artifactgate/docs/standards-mapping.md)
+> - [Incident Case Studies](file:///Users/llody/Documents/artifactgate/docs/incident-case-studies.md)
+> - [Assurance Boundaries & Scope Limitations](file:///Users/llody/Documents/artifactgate/docs/assurance-boundary.md)
+> - [Implementation Status & Maturity Matrix](file:///Users/llody/Documents/artifactgate/docs/implementation-status.md)
+> - [Production Deployment & Operations Guide](file:///Users/llody/Documents/artifactgate/docs/production-deployment.md)
 
-This repository is designed to reduce the risk of promoting a third-party image directly from an upstream registry into an environment you operate. It focuses on image trust, approval quality, and blast-radius reduction after deployment.
+---
+
+## 1. Purpose & Business Context
+
+This document defines the enterprise reference architecture for admitting third-party container images into protected production infrastructure. It addresses the **business risk** of unverified software ingestion by establishing strict trust boundaries, evidence collection, Policy-as-Code gating, and deployment verification.
 
 The example image is `n8nio/n8n`, but the architecture is meant to illustrate a broader vendor-image promotion pattern.
 
@@ -31,7 +43,7 @@ path; and runtime hardening limits impact. None is a substitute for the others.
 
 ## Semantic Admission Verification Controls
 
-During workload deployment, `iac/n8n/install.sh` delegates attestation validation to [.github/scripts/validate_promotion_decision.py](file:///Users/llody/Documents/secure-ci-deploy/.github/scripts/validate_promotion_decision.py), enforcing:
+During workload deployment, `iac/n8n/install.sh` delegates attestation validation to [.github/scripts/validate_promotion_decision.py](file:///Users/llody/Documents/artifactgate/.github/scripts/validate_promotion_decision.py), enforcing:
 - **Exact 4-Digest Tracking**: Validates `application.sourceDigest`, `application.promotedDigest`, `runner.sourceDigest`, and `runner.promotedDigest` match target deployment digests.
 - **Waiver Schema & Expiration**: For `WAIVER` decisions, enforces `waiver.present == True`, validates that `expiresOn` is in the future (max 14 days for Critical, 30 days for High), and verifies `acceptedCves`, `reviewer`, and `justification` exist.
 - **Policy Hash Verification**: Requires `vulnerabilityPolicyHash`, `ingestionPolicyHash`, and `licensePolicyHash` to be present and match local repository policies.
@@ -50,9 +62,9 @@ They do NOT prove:
 - Absolute absence of malicious content.
 
 ## Dynamic Testing & Scanner Limitations
-- **Malware Scanning**: ClamAV reported no detections using the recorded engine (v1.5.3) and signature database versions.
-- **DAST Coverage**: OWASP ZAP baseline scans are limited to exercised HTTP endpoints and unauthenticated routes; protected or hidden APIs are not covered.
-- **eBPF Observation**: Tracee eBPF monitoring captures only the specific smoke-test execution path. "Not observed" indicates unexercised code during smoke testing, not proof of code unreachability or safety.
+- **Malware Screening**: ClamAV performs known-signature malware screening on container tarballs.
+- **DAST Coverage**: OWASP ZAP performs an unauthenticated baseline web scan during the smoke test. It provides passive web-security observations but does not represent comprehensive or authenticated application penetration testing.
+- **eBPF Observation & Runner Scope**: Tracee eBPF monitoring captures system call activity on active application smoke-test paths. Companion runner dynamic observation is explicitly exempted (`EXEMPTED`) under policy and recorded as an assurance gap.
 
 ## Control Inventory and Threat Mapping
 
@@ -110,6 +122,24 @@ flowchart TD
         M --> N["Open issue if risk crosses review threshold"]
     end
 ```
+
+## Open Policy Agent (OPA) Policy-as-Code Architecture
+
+ArtifactGate separates **Evidence Collection** from **Policy Decisioning**. Scanners (Trivy, ClamAV, ZAP, Tracee) produce raw evidence reports which are normalized into a canonical `evidence.json` object.
+
+The Open Policy Agent (OPA) evaluates `evidence.json` against declarative Rego policy modules in `policy/artifactgate/` using configuration profiles in `policy/data/config.json`:
+
+- `policy/artifactgate/source.rego`: Source image allowlist and platform enforcement
+- `policy/artifactgate/evidence.rego`: Mandatory scan completion flag verification
+- `policy/artifactgate/vulnerabilities.rego`: CVE, KEV catalog, EPSS thresholds, and age rules
+- `policy/artifactgate/licenses.rego`: Prohibited copyleft and review-required licence rules
+- `policy/artifactgate/secrets.rego`: Secret scan blocking rules
+- `policy/artifactgate/malware.rego`: ClamAV malware scan blocking rules
+- `policy/artifactgate/runtime.rego`: Tracee eBPF syscall tracing and runner exemption rules
+- `policy/artifactgate/exceptions.rego`: OpenVEX and waiver expiration/coverage verification
+- `policy/artifactgate/decision.rego`: Aggregator returning standard decisions (`APPROVED`, `APPROVED_WITH_EXCEPTION`, `MANUAL_REVIEW`, `REJECTED`) with granular rule findings.
+
+All Rego rules are unit-tested via `/tmp/opa test policy/artifactgate/ policy/data/ policy/tests/` during CI merge checks.
 
 ## Identity, Trust, and Attestation
 
@@ -184,7 +214,7 @@ Useful here for understanding how supply-chain controls fit into a DevSecOps pip
 
 ### SLSA (Supply-chain Levels for Software Artifacts)
 
-ArtifactGate's promotion provenance exhibits **SLSA Build L2/L3 properties** for the promotion step (hosted, ephemeral build platform with OIDC identities). It makes no SLSA claim about the upstream vendor's original build, which it did not perform and cannot verify.
+ArtifactGate uses SLSA concepts to structure downstream promotion provenance. It does not claim a SLSA build level for third-party images that it did not build.
 
 ### EU Cyber Resilience Act (CRA) & NTIA Minimum Elements
 

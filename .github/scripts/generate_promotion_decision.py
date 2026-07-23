@@ -28,7 +28,9 @@ def hash_file(filepath):
     info = file_info(filepath)
     return info["sha256"] if info else None
 
-def validate_result_file(filepath, expected_digest, expected_role):
+def validate_result_file(filepath, expected_digest, expected_role, allowed_statuses=None, expected_run_id=None):
+    if allowed_statuses is None:
+        allowed_statuses = {"PASSED"}
     if not os.path.exists(filepath):
         print(f"❌ DECISION ERROR: Required scan result file '{filepath}' is missing.", file=sys.stderr)
         return False
@@ -41,8 +43,8 @@ def validate_result_file(filepath, expected_digest, expected_role):
             return False
 
         status = data.get("status")
-        if status != "PASSED":
-            print(f"❌ DECISION ERROR: Scan result file '{filepath}' status is '{status}' (expected 'PASSED').", file=sys.stderr)
+        if status not in allowed_statuses:
+            print(f"❌ DECISION ERROR: Scan result file '{filepath}' status is '{status}' (expected one of {allowed_statuses}).", file=sys.stderr)
             return False
 
         subject = data.get("subject", {})
@@ -66,13 +68,28 @@ def validate_result_file(filepath, expected_digest, expected_role):
             print(f"❌ DECISION ERROR: Scan result file '{filepath}' is missing execution timestamps.", file=sys.stderr)
             return False
 
-        if not data.get("workflowRunId"):
+        wf_run_id = data.get("workflowRunId")
+        if not wf_run_id:
             print(f"❌ DECISION ERROR: Scan result file '{filepath}' is missing workflowRunId.", file=sys.stderr)
             return False
 
+        if expected_run_id and expected_run_id != "local" and str(wf_run_id) != str(expected_run_id):
+            print(f"❌ DECISION ERROR: Scan result file '{filepath}' workflowRunId '{wf_run_id}' does not match expected '{expected_run_id}'.", file=sys.stderr)
+            return False
+
+        output_file = data.get("outputFile")
         output_hash = data.get("outputFileHash")
-        if not output_hash or not output_hash.startswith("sha256:"):
-            print(f"❌ DECISION ERROR: Scan result file '{filepath}' is missing valid outputFileHash.", file=sys.stderr)
+        if not output_file or not output_hash or not output_hash.startswith("sha256:"):
+            print(f"❌ DECISION ERROR: Scan result file '{filepath}' is missing valid outputFile or outputFileHash.", file=sys.stderr)
+            return False
+
+        if not os.path.exists(output_file):
+            print(f"❌ DECISION ERROR: Referenced outputFile '{output_file}' in '{filepath}' does not exist.", file=sys.stderr)
+            return False
+
+        actual_output_hash = hash_file(output_file)
+        if actual_output_hash != output_hash:
+            print(f"❌ DECISION ERROR: Scan result file '{filepath}' outputFileHash '{output_hash}' does not match calculated '{actual_output_hash}' for '{output_file}'.", file=sys.stderr)
             return False
 
         return True
@@ -104,8 +121,9 @@ def main():
     vuln_policy_hash = hash_file("policy/vulnerability-gate-policy.yml")
     ingestion_policy_hash = hash_file("policy/image-ingestion-policy.yml")
     license_policy_hash = hash_file("policy/license-policy.yml")
+    runtime_policy_hash = hash_file("policy/runtime-hardening-policy.yml")
 
-    if not vuln_policy_hash or not ingestion_policy_hash or not license_policy_hash:
+    if not vuln_policy_hash or not ingestion_policy_hash or not license_policy_hash or not runtime_policy_hash:
         print("❌ DECISION ERROR: One or more required policy files are missing or unreadable.", file=sys.stderr)
         sys.exit(1)
 
@@ -124,15 +142,15 @@ def main():
         sys.exit(1)
 
     # Strict Per-Image Result File Validation
-    app_secret_valid = validate_result_file("app-secret-scan-result.json", args.app_source_digest, "application")
-    runner_secret_valid = validate_result_file("runner-secret-scan-result.json", args.runner_source_digest, "runner")
-    app_malware_valid = validate_result_file("app-malware-scan-result.json", args.app_source_digest, "application")
-    runner_malware_valid = validate_result_file("runner-malware-scan-result.json", args.runner_source_digest, "runner")
-    app_license_valid = validate_result_file("app-license-scan-result.json", args.app_source_digest, "application")
-    runner_license_valid = validate_result_file("runner-license-scan-result.json", args.runner_source_digest, "runner")
-    app_dast_valid = validate_result_file("app-dast-result.json", args.app_source_digest, "application")
-    app_runtime_valid = validate_result_file("app-runtime-result.json", args.app_source_digest, "application")
-    runner_runtime_valid = validate_result_file("runner-runtime-result.json", args.runner_source_digest, "runner")
+    app_secret_valid = validate_result_file("app-secret-scan-result.json", args.app_source_digest, "application", expected_run_id=run_id)
+    runner_secret_valid = validate_result_file("runner-secret-scan-result.json", args.runner_source_digest, "runner", expected_run_id=run_id)
+    app_malware_valid = validate_result_file("app-malware-scan-result.json", args.app_source_digest, "application", expected_run_id=run_id)
+    runner_malware_valid = validate_result_file("runner-malware-scan-result.json", args.runner_source_digest, "runner", expected_run_id=run_id)
+    app_license_valid = validate_result_file("app-license-scan-result.json", args.app_source_digest, "application", expected_run_id=run_id)
+    runner_license_valid = validate_result_file("runner-license-scan-result.json", args.runner_source_digest, "runner", expected_run_id=run_id)
+    app_dast_valid = validate_result_file("app-dast-result.json", args.app_source_digest, "application", expected_run_id=run_id)
+    app_runtime_valid = validate_result_file("app-runtime-result.json", args.app_source_digest, "application", expected_run_id=run_id)
+    runner_runtime_valid = validate_result_file("runner-runtime-result.json", args.runner_source_digest, "runner", allowed_statuses={"EXEMPTED"}, expected_run_id=run_id)
 
     vuln_report_valid = os.path.exists("trivy-report.json") and os.path.exists("trivy-report.runner.json")
     sbom_valid = os.path.exists("sbom.spdx.json") and os.path.exists("runner-sbom.spdx.json")
@@ -155,7 +173,8 @@ def main():
         "runner-sbom.spdx.json",
         "app-vex.json",
         "runner-vex.json",
-        "vendor-sig-check.txt"
+        "vendor-sig-check.txt",
+        "transformation-attestation.json"
     ]
 
     for req_file in mandatory_evidence_files:
@@ -295,7 +314,8 @@ def main():
             "commit": os.environ.get("GITHUB_SHA", "unknown"),
             "vulnerabilityPolicyHash": vuln_policy_hash,
             "ingestionPolicyHash": ingestion_policy_hash,
-            "licensePolicyHash": license_policy_hash
+            "licensePolicyHash": license_policy_hash,
+            "runtimePolicyHash": runtime_policy_hash
         },
         "evidence": {
             "vulnerabilityScanCompleted": vuln_report_valid,
@@ -304,7 +324,21 @@ def main():
             "licenseScanCompleted": app_license_valid and runner_license_valid,
             "applicationRuntimeObservation": "PASSED" if app_runtime_valid else "FAILED",
             "runnerRuntimeObservation": "EXEMPTED",
-            "runnerRuntimeExemptionReason": "Task runner dynamic observation exempt under security policy (isolated execution)",
+            "runnerRuntimeExemption": {
+                "status": "EXEMPTED",
+                "exemption": {
+                    "policyRule": "runtime.runner.exemption",
+                    "policyHash": runtime_policy_hash,
+                    "approvedBy": "security-team",
+                    "riskOwner": "infrastructure-lead",
+                    "reason": "Task runner dynamic observation exempt under security policy (isolated execution)",
+                    "compensatingControls": [
+                        "ephemeral_container_isolation",
+                        "no_host_filesystem_mount"
+                    ],
+                    "reviewOn": "2026-08-01"
+                }
+            },
             "dastCompleted": app_dast_valid,
             "sbomGenerated": sbom_valid,
             "vexGenerated": vex_valid,
