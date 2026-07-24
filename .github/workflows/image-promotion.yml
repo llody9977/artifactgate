@@ -35,6 +35,7 @@ jobs:
     permissions:
       contents: read
       issues: write
+      packages: read
       security-events: write
     steps:
       - name: Checkout repository
@@ -110,10 +111,37 @@ jobs:
             VERSION="$REQUESTED"
           fi
 
-          # Check if this version has already been promoted to our GHCR (Idempotency Check)
-          TOKEN="${{ secrets.GITHUB_TOKEN }}"
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TOKEN" "https://ghcr.io/v2/${{ github.repository }}/n8n-trusted/manifests/$VERSION")
-          RUNNER_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TOKEN" "https://ghcr.io/v2/${{ github.repository }}/n8n-runners-trusted/manifests/$VERSION")
+          # Check if this version has already been promoted to our GHCR (Idempotency Check).
+          # Two things this request must get right, or it always reports "not promoted":
+          #   1. Promoted tags are OCI image indexes (docker buildx imagetools create).
+          #      GHCR answers 404 unless Accept lists that media type, so reuse
+          #      ACCEPT_HEADER here exactly as the Docker Hub lookups below do.
+          #   2. The /v2/ manifest API wants a registry token exchanged from
+          #      GITHUB_TOKEN via ghcr.io/token, not GITHUB_TOKEN presented directly.
+          #      The job grants packages: read so that exchange carries pull scope.
+          # A lookup failure must fall through to a normal scan+promote (safe), never
+          # to a false "already promoted" skip, so anything other than 200 continues.
+          ghcr_manifest_status() {
+            local pkg="$1" ver="$2" tok code
+            tok=$(curl -s -u "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
+              "https://ghcr.io/token?service=ghcr.io&scope=repository:${{ github.repository }}/${pkg}:pull" \
+              | jq -r '.token // empty')
+            if [ -z "$tok" ]; then
+              echo "000"
+              return
+            fi
+            # `|| true` keeps a transient network error from aborting the step under
+            # `bash -e`; curl still emits 000, which reads as "not promoted".
+            code=$(curl -s -o /dev/null -w "%{http_code}" \
+              -H "Authorization: Bearer $tok" \
+              -H "Accept: $ACCEPT_HEADER" \
+              "https://ghcr.io/v2/${{ github.repository }}/${pkg}/manifests/${ver}" || true)
+            echo "${code:-000}"
+          }
+
+          STATUS=$(ghcr_manifest_status n8n-trusted "$VERSION")
+          RUNNER_STATUS=$(ghcr_manifest_status n8n-runners-trusted "$VERSION")
+          echo "GHCR idempotency check for $VERSION: n8n-trusted=$STATUS n8n-runners-trusted=$RUNNER_STATUS"
           if [ "$STATUS" = "200" ] && [ "$RUNNER_STATUS" = "200" ]; then
             echo "✅ Version $VERSION application and runner are already promoted."
             echo "No action required. Exiting gracefully."
