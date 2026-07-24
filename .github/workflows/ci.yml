@@ -28,6 +28,9 @@ jobs:
           echo "Running ShellCheck on bash scripts..."
           shellcheck iac/n8n/install.sh iac/n8n/upgrade.sh .github/scripts/*.sh
           python3 .github/scripts/test_validate_compose.py
+          # Covers validate_predicate, validate_vex, and validate_sbom — the last of
+          # which gates promotion at image-promotion.yml. Needs no OPA binary.
+          python3 .github/scripts/test_security_review_remediations.py
 
       - name: Install OPA & Test Rego Policies
         run: |
