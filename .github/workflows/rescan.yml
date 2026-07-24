@@ -224,17 +224,19 @@ jobs:
             [ "$WAIVER_EXPIRED" = true ] && ALERT_BODY="$ALERT_BODY- ⌛ The attached promotion waiver has expired\n"
             echo "  ⚠️  Alert triggered for $VERSION"
 
-            cat << 'EOF' > revocation-decision.json
-            {
-              "schemaVersion": "1.0",
-              "status": "REVOKED",
-              "reason": "Security decay: promoted image no longer satisfies policy thresholds without active waiver",
-              "revokedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-              "targetVersion": "$VERSION",
-              "applicationDigest": "${APP_DIG:-unknown}",
-              "runnerDigest": "${RUN_DIG:-unknown}"
-            }
-            EOF
+            jq -n \
+              --arg ver "$VERSION" \
+              --arg appdig "${APP_DIG:-unknown}" \
+              --arg rundig "${RUN_DIG:-unknown}" \
+              '{
+                schemaVersion: "1.0",
+                status: "REVOKED",
+                reason: "Security decay: promoted image no longer satisfies policy thresholds without active waiver",
+                revokedAt: (now | strftime("%Y-%m-%dT%H:%M:%SZ")),
+                targetVersion: $ver,
+                applicationDigest: $appdig,
+                runnerDigest: $rundig
+              }' > revocation-decision.json
             echo "🚨 Generated revocation decision predicate: revocation-decision.json"
           else
             echo "  ✅ $VERSION remains auto-eligible"
@@ -258,22 +260,7 @@ jobs:
           ALERT_BODY: ${{ steps.rescan.outputs.alert_body }}
         run: |
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          cat << EOF > issue_body.md
-          ## Weekly Re-Scan Alert
-
-          One or more previously promoted images are now **ineligible under the current age/KEV/EPSS promotion gate**.
-
-          **Action required**: Review the findings below and decide whether to:
-          1. Promote a newer clean version via the Image Promotion pipeline
-          2. Revoke the affected image from deployment (update \`N8N_IMAGE_IDENTIFIER\` on hosts)
-
-          $ALERT_BODY
-
-          ---
-          👉 [View Full Vulnerability Details (Workflow Run)]($RUN_URL)
-
-          *Triggered by the weekly re-scan job on $(date -u '+%Y-%m-%d')*
-          EOF
+          printf "## Weekly Re-Scan Alert\n\nOne or more previously promoted images are now **ineligible under the current age/KEV/EPSS promotion gate**.\n\n**Action required**: Review the findings below and decide whether to:\n1. Promote a newer clean version via the Image Promotion pipeline\n2. Revoke the affected image from deployment (update \`N8N_IMAGE_IDENTIFIER\` on hosts)\n\n%b\n\n---\n👉 [View Full Vulnerability Details (Workflow Run)](%s)\n\n*Triggered by the weekly re-scan job on %s*\n" "$ALERT_BODY" "$RUN_URL" "$(date -u '+%Y-%m-%d')" > issue_body.md
 
           gh label create security --color "FF0000" --force || true
 
