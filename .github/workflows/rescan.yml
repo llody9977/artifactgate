@@ -242,6 +242,7 @@ EOF
           fi
 
 
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
           # Build JSON array of successfully scanned versions
           SCANNED_VERSIONS_JSON=$(echo "$SCANNED_TAGS" | tr ' ' '\n' | grep -v '^$' | jq -R . | jq -s -c .)
           echo "scanned_versions=$SCANNED_VERSIONS_JSON" >> $GITHUB_OUTPUT
@@ -283,6 +284,13 @@ EOF
             --body-file issue_body.md \
             --label "security"
 
+      - name: Upload Trivy scan results to GitHub Security tab
+        if: always() && steps.rescan.outputs.version != ''
+        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a # v4
+        with:
+          sarif_file: "sarifs/rescan-${{ steps.rescan.outputs.version }}.sarif"
+          category: "rescan-${{ steps.rescan.outputs.version }}"
+
       - name: Upload SARIFs as internal artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
@@ -290,31 +298,3 @@ EOF
           name: sarif-files
           path: sarifs/
           if-no-files-found: ignore
-
-  upload-sarifs:
-    name: Upload SARIFs to Code Scanning
-    needs: rescan
-    if: always() && needs.rescan.outputs.scanned_versions != '[]' && needs.rescan.outputs.scanned_versions != ''
-    runs-on: ubuntu-latest
-    permissions:
-      security-events: write
-    strategy:
-      fail-fast: false
-      matrix:
-        version: ${{ fromJson(needs.rescan.outputs.scanned_versions) }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-
-      - name: Download SARIF artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: sarif-files
-          path: sarifs/
-
-      - name: Upload Trivy scan results to GitHub Security tab
-        if: hashFiles(format('sarifs/rescan-{0}.sarif', matrix.version)) != ''
-        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a # v4
-        with:
-          sarif_file: "sarifs/rescan-${{ matrix.version }}.sarif"
-          category: "rescan-${{ matrix.version }}"
