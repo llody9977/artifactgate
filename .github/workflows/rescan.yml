@@ -225,17 +225,17 @@ jobs:
             [ "$WAIVER_EXPIRED" = true ] && ALERT_BODY="$ALERT_BODY- ⌛ The attached promotion waiver has expired\n"
             echo "  ⚠️  Alert triggered for $VERSION"
 
-            cat << EOF > revocation-decision.json
-{
-  "schemaVersion": "1.0",
-  "status": "REVOKED",
-  "reason": "Security decay: promoted image no longer satisfies policy thresholds without active waiver",
-  "revokedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "targetVersion": "$VERSION",
-  "applicationDigest": "${APP_DIG:-unknown}",
-  "runnerDigest": "${RUN_DIG:-unknown}"
-}
-EOF
+            cat << 'EOF' > revocation-decision.json
+            {
+              "schemaVersion": "1.0",
+              "status": "REVOKED",
+              "reason": "Security decay: promoted image no longer satisfies policy thresholds without active waiver",
+              "revokedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+              "targetVersion": "$VERSION",
+              "applicationDigest": "${APP_DIG:-unknown}",
+              "runnerDigest": "${RUN_DIG:-unknown}"
+            }
+            EOF
             echo "🚨 Generated revocation decision predicate: revocation-decision.json"
           else
             echo "  ✅ $VERSION remains auto-eligible"
@@ -248,9 +248,9 @@ EOF
           echo "scanned_versions=$SCANNED_VERSIONS_JSON" >> $GITHUB_OUTPUT
 
           echo "alert_found=$ALERT_FOUND" >> $GITHUB_OUTPUT
-          echo "alert_body<<EOF" >> $GITHUB_OUTPUT
+          echo "alert_body<<EOF_ALERT" >> $GITHUB_OUTPUT
           echo -e "$ALERT_BODY" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          echo "EOF_ALERT" >> $GITHUB_OUTPUT
 
       - name: Open GitHub Issue if new findings detected
         if: steps.rescan.outputs.alert_found == 'true'
