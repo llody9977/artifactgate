@@ -4,180 +4,494 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ArtifactGate — Enterprise Third-Party Container Admission Architecture</title>
-  <meta name="description" content="Reference architecture for admitting third-party container images into enterprise infrastructure using OPA Policy-as-Code, Cosign attestations, and digest-bound enforcement.">
+  <meta name="description" content="Reference architecture for admitting third-party container images into enterprise infrastructure using OPA Policy-as-Code, Cosign keyless attestations, and digest-bound deployment verification.">
+  <meta name="author" content="llody9977">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg-primary: #0a0d14;
-      --bg-secondary: #121722;
-      --bg-card: #182030;
-      --bg-card-hover: #1f2a3e;
-      --border-color: rgba(255, 255, 255, 0.08);
+      --bg-dark: #070a12;
+      --bg-page: #090d16;
+      --bg-panel: #0f172a;
+      --bg-panel-hover: #162036;
+      --bg-card: #131c2e;
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-focus: rgba(56, 189, 248, 0.3);
       --border-accent: rgba(99, 102, 241, 0.3);
-      --text-main: #f3f4f6;
-      --text-muted: #9ca3af;
-      --text-dim: #6b7280;
-      --accent-indigo: #6366f1;
-      --accent-purple: #8b5cf6;
-      --accent-cyan: #06b6d4;
-      --accent-emerald: #10b981;
-      --accent-amber: #f59e0b;
-      --accent-rose: #f43f5e;
+      --text-heading: #f8fafc;
+      --text-body: #cbd5e1;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --color-cyan: #38bdf8;
+      --color-emerald: #10b981;
+      --color-rose: #f43f5e;
+      --color-amber: #f59e0b;
+      --color-indigo: #6366f1;
+      --color-teal: #14b8a6;
       --font-heading: 'Outfit', sans-serif;
       --font-body: 'Inter', sans-serif;
-      --font-code: 'Fira Code', monospace;
+      --font-mono: 'Fira Code', monospace;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
     body {
-      background-color: var(--bg-primary);
-      color: var(--text-main);
+      background-color: var(--bg-page);
+      color: var(--text-body);
       font-family: var(--font-body);
       line-height: 1.6;
       -webkit-font-smoothing: antialiased;
     }
 
-    /* Container & Layout */
-    .container { max-width: 1200px; margin: 0 auto; padding: 0 1.5rem; }
-    header { border-bottom: 1px solid var(--border-color); padding: 1.5rem 0; position: sticky; top: 0; background: rgba(10, 13, 20, 0.85); backdrop-filter: blur(12px); z-index: 100; }
-    .nav-wrapper { display: flex; justify-content: space-between; align-items: center; }
-    .logo { font-family: var(--font-heading); font-size: 1.5rem; font-weight: 800; color: #fff; text-decoration: none; display: flex; align-items: center; gap: 0.5rem; }
-    .logo span { background: linear-gradient(135deg, var(--accent-indigo), var(--accent-cyan)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-    .nav-links { display: flex; gap: 1.5rem; list-style: none; }
-    .nav-links a { color: var(--text-muted); text-decoration: none; font-size: 0.9rem; font-weight: 500; transition: color 0.2s; }
-    .nav-links a:hover { color: #fff; }
+    /* Container */
+    .container { max-width: 1240px; margin: 0 auto; padding: 0 1.5rem; }
 
-    /* Banners & Badges */
-    .banner-warning { background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); color: #fcd34d; padding: 0.75rem 1.25rem; border-radius: 8px; font-size: 0.875rem; margin-bottom: 2rem; display: flex; align-items: center; gap: 0.75rem; }
-    .badge { display: inline-flex; align-items: center; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+    /* VulnSignal Topbar Header */
+    .topbar {
+      position: sticky;
+      top: 0;
+      background: rgba(9, 13, 22, 0.88);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border-subtle);
+      z-index: 1000;
+      padding: 0.85rem 0;
+    }
+    .topbar-wrapper {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1.5rem;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+      color: var(--text-heading);
+    }
+    .brand__mark {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2px;
+      width: 22px;
+      height: 22px;
+    }
+    .brand__mark i {
+      background: var(--color-cyan);
+      border-radius: 1px;
+      opacity: 0.85;
+    }
+    .brand__mark i:nth-child(2), .brand__mark i:nth-child(4), .brand__mark i:nth-child(9) {
+      background: var(--color-indigo);
+    }
+    .brand strong {
+      font-family: var(--font-heading);
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+    .brand small {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      color: var(--color-cyan);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .nav-links {
+      display: flex;
+      gap: 1.25rem;
+      list-style: none;
+    }
+    .nav-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.875rem;
+      font-weight: 500;
+      font-family: var(--font-mono);
+      transition: color 0.15s;
+    }
+    .nav-links a:hover { color: var(--color-cyan); }
+
+    .sync-state {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid var(--border-subtle);
+      padding: 0.4rem 0.85rem;
+      border-radius: 9999px;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+    }
+    .sync-state__dot {
+      width: 8px;
+      height: 8px;
+      background: var(--color-emerald);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--color-emerald);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+    .sync-state strong { color: var(--text-heading); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .sync-state small { color: var(--text-muted); }
+
+    /* Badges */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.2rem 0.65rem;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
     .badge-indigo { background: rgba(99, 102, 241, 0.15); color: #a5b4fc; border: 1px solid rgba(99, 102, 241, 0.3); }
     .badge-emerald { background: rgba(16, 185, 129, 0.15); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.3); }
     .badge-amber { background: rgba(245, 158, 11, 0.15); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.3); }
     .badge-rose { background: rgba(244, 63, 94, 0.15); color: #fda4af; border: 1px solid rgba(244, 63, 94, 0.3); }
+    .badge-cyan { background: rgba(56, 189, 248, 0.15); color: #7dd3fc; border: 1px solid rgba(56, 189, 248, 0.3); }
 
-    /* Hero Section */
-    .hero { padding: 4rem 0 3rem; text-align: center; }
-    .hero h1 { font-family: var(--font-heading); font-size: 3rem; font-weight: 800; line-height: 1.15; margin-bottom: 1.25rem; color: #fff; }
-    .hero h1 span { background: linear-gradient(135deg, #a5b4fc, #38bdf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-    .hero p { font-size: 1.2rem; color: var(--text-muted); max-width: 800px; margin: 0 auto 2rem; }
-    .hero-meta { display: flex; justify-content: center; gap: 2rem; flex-wrap: wrap; margin-top: 1.5rem; }
-    .meta-box { background: var(--bg-secondary); border: 1px solid var(--border-color); padding: 0.75rem 1.25rem; border-radius: 8px; text-align: left; }
-    .meta-box label { font-size: 0.75rem; text-transform: uppercase; color: var(--text-dim); display: block; font-weight: 600; }
-    .meta-box span { font-size: 0.95rem; font-weight: 600; color: #fff; }
+    /* VulnSignal Banner */
+    .banner-warning {
+      background: rgba(245, 158, 11, 0.08);
+      border: 1px solid rgba(245, 158, 11, 0.25);
+      color: #fcd34d;
+      padding: 0.75rem 1.25rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      margin: 1.5rem 0 2rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    /* VulnSignal Hero Layout */
+    .hero { padding: 3rem 0 2.5rem; }
+    .hero__copy .kicker {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--color-cyan);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 0.75rem;
+    }
+    .hero__copy h1 {
+      font-family: var(--font-heading);
+      font-size: 3.25rem;
+      font-weight: 800;
+      line-height: 1.1;
+      color: var(--text-heading);
+      margin-bottom: 1rem;
+      letter-spacing: -0.03em;
+    }
+    .hero__copy h1 em {
+      font-style: normal;
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero__copy p {
+      font-size: 1.15rem;
+      color: var(--text-muted);
+      max-width: 850px;
+      margin-bottom: 2rem;
+    }
+
+    /* VulnSignal Hero Status Grid */
+    .hero__status {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    .hero__status div {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-subtle);
+      padding: 1rem 1.25rem;
+      border-radius: 8px;
+    }
+    .hero__status span {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 0.35rem;
+    }
+    .hero__status strong {
+      font-size: 1.1rem;
+      color: var(--text-heading);
+      font-family: var(--font-mono);
+    }
+
+    /* VulnSignal Source Snapshot Strip */
+    .source-snapshot {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 1.25rem;
+      margin-bottom: 3rem;
+    }
+    .source-snapshot strong {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      color: var(--color-cyan);
+      letter-spacing: 0.05em;
+      margin-bottom: 0.85rem;
+    }
+    .source-snapshot__grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 0.75rem;
+    }
+    .source-item {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      padding: 0.65rem 0.85rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+    }
+    .source-item span { display: block; font-weight: 600; color: var(--text-heading); font-family: var(--font-mono); }
+    .source-item time { display: block; font-size: 0.7rem; color: var(--text-dim); margin-top: 0.2rem; }
 
     /* Section Styling */
-    section { padding: 3.5rem 0; border-top: 1px solid var(--border-color); }
-    .section-header { margin-bottom: 2.5rem; }
-    .section-header h2 { font-family: var(--font-heading); font-size: 2rem; font-weight: 700; color: #fff; margin-bottom: 0.5rem; }
+    section { padding: 3rem 0; border-top: 1px solid var(--border-subtle); }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--color-cyan);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 0.5rem;
+    }
+    .section-header { margin-bottom: 2rem; }
+    .section-header h2 {
+      font-family: var(--font-heading);
+      font-size: 2.25rem;
+      font-weight: 700;
+      color: var(--text-heading);
+      letter-spacing: -0.02em;
+      margin-bottom: 0.5rem;
+    }
     .section-header p { color: var(--text-muted); font-size: 1.05rem; }
 
-    /* Grid & Cards */
-    .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; }
-    .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; }
-    .card { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 1.75rem; transition: transform 0.2s, border-color 0.2s; }
-    .card:hover { border-color: var(--border-accent); transform: translateY(-2px); }
-    .card h3 { font-family: var(--font-heading); font-size: 1.25rem; font-weight: 600; color: #fff; margin-bottom: 0.75rem; }
-    .card p { color: var(--text-muted); font-size: 0.95rem; }
+    /* Cards & Grids */
+    .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.25rem; }
+    .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem; }
+    .card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 1.5rem;
+      transition: border-color 0.2s, background-color 0.2s;
+    }
+    .card:hover {
+      border-color: var(--border-focus);
+      background: var(--bg-panel-hover);
+    }
+    .card h3 {
+      font-family: var(--font-heading);
+      font-size: 1.2rem;
+      font-weight: 600;
+      color: var(--text-heading);
+      margin-bottom: 0.65rem;
+    }
+    .card p { color: var(--text-muted); font-size: 0.925rem; }
 
-    /* Tables */
-    .table-wrapper { width: 100%; overflow-x: auto; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; margin-top: 1rem; }
-    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem; }
-    th { background: rgba(255, 255, 255, 0.03); color: #fff; padding: 1rem; border-bottom: 1px solid var(--border-color); font-weight: 600; }
-    td { padding: 1rem; border-bottom: 1px solid var(--border-color); color: var(--text-muted); }
+    /* Metric Indicator Cells (VulnSignal Style) */
+    .indicator-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    .indicator-cell {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 1.25rem;
+    }
+    .indicator-cell__label { font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; }
+    .indicator-cell__value { font-family: var(--font-mono); font-size: 2rem; font-weight: 700; color: var(--text-heading); margin: 0.25rem 0; }
+    .indicator-cell p { font-size: 0.8rem; color: var(--text-muted); }
+
+    /* Tables (VulnSignal Style) */
+    .table-wrapper {
+      width: 100%;
+      overflow-x: auto;
+      background: var(--bg-panel);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+    }
+    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.875rem; }
+    th {
+      background: rgba(255, 255, 255, 0.02);
+      color: var(--text-heading);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      padding: 0.85rem 1rem;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    td { padding: 0.85rem 1rem; border-bottom: 1px solid var(--border-subtle); color: var(--text-body); }
     tr:last-child td { border-bottom: none; }
     tr:hover td { background: rgba(255, 255, 255, 0.015); }
 
-    /* Diagram Block */
-    .diagram-box { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 2rem; font-family: var(--font-code); font-size: 0.85rem; color: #38bdf8; overflow-x: auto; white-space: pre; line-height: 1.4; }
-
-    /* Code Blocks */
-    .code-block { background: #06080d; border: 1px solid var(--border-color); border-radius: 8px; padding: 1.25rem; font-family: var(--font-code); font-size: 0.85rem; color: #e5e7eb; overflow-x: auto; }
+    /* Diagram & Code */
+    .diagram-box {
+      background: #050810;
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 1.75rem;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      color: var(--color-cyan);
+      overflow-x: auto;
+      white-space: pre;
+      line-height: 1.4;
+    }
+    .code-block {
+      background: #050810;
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 1.25rem;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      color: #e2e8f0;
+      overflow-x: auto;
+    }
 
     /* Footer */
-    footer { border-top: 1px solid var(--border-color); padding: 3rem 0; color: var(--text-dim); font-size: 0.875rem; text-align: center; }
-    footer a { color: var(--text-muted); text-decoration: none; }
-    footer a:hover { color: #fff; }
+    footer {
+      border-top: 1px solid var(--border-subtle);
+      padding: 2.5rem 0;
+      color: var(--text-dim);
+      font-size: 0.85rem;
+      text-align: center;
+    }
+    footer a { color: var(--text-muted); text-decoration: none; font-family: var(--font-mono); }
+    footer a:hover { color: var(--color-cyan); }
   </style>
 </head>
 <body>
 
-  <header>
-    <div class="container nav-wrapper">
-      <a href="#" class="logo">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        Artifact<span>Gate</span>
+  <!-- VulnSignal Header Topbar -->
+  <header class="topbar">
+    <div class="container topbar-wrapper">
+      <a href="#top" class="brand" aria-label="ArtifactGate Home">
+        <span class="brand__mark" aria-hidden="true">
+          <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        </span>
+        <span>
+          <strong>ArtifactGate</strong>
+          <small>ADMISSION ARCHITECTURE</small>
+        </span>
       </a>
       <ul class="nav-links">
-        <li><a href="#problem">Business Risk</a></li>
+        <li><a href="#problem">Problem</a></li>
         <li><a href="#requirements">Requirements</a></li>
         <li><a href="#standards">Standards</a></li>
         <li><a href="#architecture">Architecture</a></li>
         <li><a href="#opa-policy">OPA Policy</a></li>
-        <li><a href="#controls">Control Matrix</a></li>
+        <li><a href="#controls">Controls</a></li>
         <li><a href="#incidents">Case Studies</a></li>
-        <li><a href="#maturity">Maturity Roadmap</a></li>
+        <li><a href="#maturity">Maturity</a></li>
       </ul>
+      <div class="sync-state">
+        <span class="sync-state__dot" aria-hidden="true"></span>
+        <span><strong>STATUS</strong><small>REFERENCE IMPL</small></span>
+      </div>
     </div>
   </header>
 
-  <main class="container">
+  <div class="page container" id="top">
 
-    <!-- Hero Section -->
+    <!-- VulnSignal Style Hero Section -->
     <section class="hero">
       <div class="banner-warning">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
         <div>
-          <strong>Reference Architecture & Implementation Pattern:</strong> ArtifactGate is designed to demonstrate third-party container admission control. Additional governance and infrastructure are required before production deployment.
+          <strong>Enterprise Reference Architecture & Implementation Pattern:</strong> ArtifactGate is designed to demonstrate third-party container admission control. Additional governance and infrastructure are required before production deployment.
         </div>
       </div>
 
-      <span class="badge badge-indigo">Enterprise Reference Architecture</span>
-      <h1>Admit Third-Party Containers With <span>Cryptographic Assurance</span></h1>
-      <p>A 4-plane admission architecture binding security evidence, Open Policy Agent (OPA) Policy-as-Code evaluation, Cosign keyless attestations, and deployment verification to immutable cryptographic digests.</p>
+      <div class="hero__copy">
+        <p class="kicker">THIRD-PARTY CONTAINER ADMISSION CONTROL</p>
+        <h1>Container admission.<br/><em>Cryptographic trust.</em></h1>
+        <p>A 4-plane admission architecture binding security evidence, Open Policy Agent (OPA) Policy-as-Code evaluation, Cosign keyless attestations, and deployment verification to immutable cryptographic artifact digests.</p>
+      </div>
 
-      <div class="hero-meta">
-        <div class="meta-box">
-          <label>Latest Release Tag</label>
-          <span id="release-tag-display"><span class="badge badge-emerald">n8n-2.30.3</span></span>
+      <!-- VulnSignal Status Grid -->
+      <div class="hero__status">
+        <div>
+          <span>Latest Evaluated Tag</span>
+          <strong><span id="release-tag-display"><span class="badge badge-emerald">n8n-2.30.3</span></span></strong>
         </div>
-        <div class="meta-box">
-          <label>Target Package Names</label>
-          <span>n8n-trusted & n8n-runners-trusted</span>
+        <div>
+          <span>Target Workloads</span>
+          <strong><span class="badge badge-cyan">n8n-trusted</span></strong>
         </div>
-        <div class="meta-box">
-          <label>Policy Engine</label>
-          <span>Open Policy Agent (Rego v1)</span>
+        <div>
+          <span>Policy Engine</span>
+          <strong><span class="badge badge-indigo">OPA Rego v1</span></strong>
         </div>
-        <div class="meta-box">
-          <label>Maturity Status</label>
-          <span>Reference Implementation</span>
+        <div>
+          <span>Deployment Verification</span>
+          <strong><span class="badge badge-amber">Cosign Keyless</span></strong>
+        </div>
+      </div>
+
+      <!-- VulnSignal Source Snapshot Strip -->
+      <div class="source-snapshot">
+        <strong>Security & Evidence Feed Dependencies</strong>
+        <div class="source-snapshot__grid">
+          <div class="source-item">
+            <span>Trivy Vulnerability</span>
+            <time><b>Scanner</b> CVE & Layer Audit</time>
+          </div>
+          <div class="source-item">
+            <span>ClamAV Malware</span>
+            <time><b>Scanner</b> Known Signatures</time>
+          </div>
+          <div class="source-item">
+            <span>Tracee eBPF</span>
+            <time><b>Observation</b> Syscall Tracing</time>
+          </div>
+          <div class="source-item">
+            <span>OWASP ZAP</span>
+            <time><b>DAST</b> Baseline Web Scan</time>
+          </div>
+          <div class="source-item">
+            <span>SPDX 2.3 SBOM</span>
+            <time><b>Inventory</b> Syft Component Map</time>
+          </div>
+          <div class="source-item">
+            <span>Cosign Attest</span>
+            <time><b>Signing</b> Keyless OIDC Token</time>
+          </div>
+          <div class="source-item">
+            <span>CISA KEV</span>
+            <time><b>Catalog</b> Active Exploits</time>
+          </div>
+          <div class="source-item">
+            <span>FIRST EPSS</span>
+            <time><b>Scoring</b> EPSS Thresholds</time>
+          </div>
         </div>
       </div>
     </section>
 
-    <!-- 1. Executive Overview -->
-    <section id="overview">
-      <div class="section-header">
-        <h2>Executive Overview</h2>
-        <p>Eliminating third-party container supply chain risk through standardized admission governance.</p>
-      </div>
-      <div class="grid-2">
-        <div class="card">
-          <h3>The Vendor Container Dilemma</h3>
-          <p>Modern applications rely heavily on pre-built third-party container images (e.g. database engines, automation nodes, proxy agents). Ingesting vendor images directly into production transfers external supply chain vulnerabilities, licensing liabilities, and compromised code straight into internal infrastructure.</p>
-        </div>
-        <div class="card">
-          <h3>ArtifactGate Solution</h3>
-          <p>ArtifactGate provides a structured reference architecture for admitting third-party artifacts. It resolves vendor tags to immutable SHA-256 digests, collects multi-dimensional evidence, evaluates standardized OPA policies, and enforces signed attestation predicates at deployment time.</p>
-        </div>
-      </div>
-    </section>
-
-    <!-- 2. The Business Problem -->
+    <!-- [01] The Business Problem -->
     <section id="problem">
       <div class="section-header">
+        <p class="eyebrow">[01] Risk Assessment</p>
         <h2>The Business Problem & Supply Chain Risk</h2>
         <p>Software supply chain vulnerabilities are business risks requiring explicit admission controls.</p>
       </div>
@@ -215,72 +529,17 @@
       </div>
     </section>
 
-    <!-- 3. Why Naive Approaches Fail -->
-    <section id="comparison">
-      <div class="section-header">
-        <h2>Why Naive Approaches Are Insufficient</h2>
-        <p>Common industry practices often fail to mitigate business risk.</p>
-      </div>
-      <div class="table-wrapper">
-        <table>
-          <thead>
-            <tr>
-              <th>Common Practice</th>
-              <th>Why It Is Insufficient</th>
-              <th>ArtifactGate Controlled Approach</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><strong>Pull official vendor tag</strong></td>
-              <td>"Official" tags do not prove upstream build integrity or absence of vulnerability decay.</td>
-              <td>Strict source image allowlist & immutable SHA-256 digest pinning at intake.</td>
-            </tr>
-            <tr>
-              <td><strong>Scan image tag in CI</strong></td>
-              <td>Tags can change after scanning. Staging and production run different bytes.</td>
-              <td>Security decisions are strictly bound to immutable SHA-256 digests.</td>
-            </tr>
-            <tr>
-              <td><strong>Block Critical CVEs only</strong></td>
-              <td>CVSS severity ignores active exploitation (KEV) and real exploit probability (EPSS).</td>
-              <td>CISA KEV catalog blocking & EPSS probability threshold gating via OPA.</td>
-            </tr>
-            <tr>
-              <td><strong>Generate an SBOM</strong></td>
-              <td>An SBOM describes identified components; it does not evaluate policy acceptability.</td>
-              <td>SPDX 2.3 SBOM generated, attested keylessly, and evaluated against policy.</td>
-            </tr>
-            <tr>
-              <td><strong>Internal key signing</strong></td>
-              <td>Signing an un-assessed image internally provides false trust without evidence.</td>
-              <td>Attests explicit promotion decision predicates (`promotiondecision`) containing 4-digest pairing.</td>
-            </tr>
-            <tr>
-              <td><strong>One-time pre-release scan</strong></td>
-              <td>New KEV catalog entries and zero-day vulnerabilities emerge post-release.</td>
-              <td>Weekly automated cron re-scanning (`rescan.yml`) with issue generation.</td>
-            </tr>
-            <tr>
-              <td><strong>Unstructured exceptions</strong></td>
-              <td>Waivers stored in comments lack expiration dates, approvers, and auditability.</td>
-              <td>Machine-readable OpenVEX waiver contracts (`waiver.json`) with mandatory expiry.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- 4. Requirements Specification -->
+    <!-- [02] Admission Requirements -->
     <section id="requirements">
       <div class="section-header">
+        <p class="eyebrow">[02] Control Specification</p>
         <h2>Admission Control Requirements</h2>
         <p>What an enterprise container artifact admission system must deliver.</p>
       </div>
       <div class="grid-2">
         <div class="card">
           <h3>Functional Requirements</h3>
-          <ul style="color: var(--text-muted); padding-left: 1.2rem; font-size: 0.95rem;">
+          <ul style="color: var(--text-muted); padding-left: 1.2rem; font-size: 0.9rem;">
             <li>Bind all decisions to immutable SHA-256 digests & `linux/amd64` architecture.</li>
             <li>Enforce upstream source image allowlists & version intake rules.</li>
             <li>Collect static (CVE, secret, license, malware) & dynamic (eBPF) evidence.</li>
@@ -293,7 +552,7 @@
         </div>
         <div class="card">
           <h3>Security & Risk Requirements</h3>
-          <ul style="color: var(--text-muted); padding-left: 1.2rem; font-size: 0.95rem;">
+          <ul style="color: var(--text-muted); padding-left: 1.2rem; font-size: 0.9rem;">
             <li><strong>Fail-Closed Posture</strong>: Reject promotion if scan evidence is missing or malformed.</li>
             <li><strong>Quarantine Isolation</strong>: Execute dynamic observation in bounded sandboxes.</li>
             <li><strong>Least-Privilege OIDC</strong>: Restrict workflow permissions & keyless signing identities.</li>
@@ -305,9 +564,10 @@
       </div>
     </section>
 
-    <!-- 5. Standards Mapping -->
+    <!-- [03] Recognized Standards -->
     <section id="standards">
       <div class="section-header">
+        <p class="eyebrow">[03] Design Basis</p>
         <h2>Recognized Guidance & Design Basis</h2>
         <p>ArtifactGate's controls are <strong>informed by</strong> recognized industry standards.</p>
       </div>
@@ -361,9 +621,10 @@
       </div>
     </section>
 
-    <!-- 6. Architecture Planes -->
+    <!-- [04] 4-Plane Architecture -->
     <section id="architecture">
       <div class="section-header">
+        <p class="eyebrow">[04] System Architecture</p>
         <h2>4-Plane Admission Architecture</h2>
         <p>Decoupling evidence collection, policy decisioning, and deployment enforcement.</p>
       </div>
@@ -389,7 +650,7 @@ Registry ──► Resolve ──► Evidence ──► OPA Decision ──► P
                                                               v
                                                       Reassess / Revoke
       </div>
-      <div class="grid-2" style="margin-top: 1.5rem;">
+      <div class="grid-2" style="margin-top: 1.25rem;">
         <div class="card">
           <h3>1. Intake Plane</h3>
           <p>Resolves upstream vendor references (`n8nio/n8n`) to immutable SHA-256 digests for `linux/amd64`. Verifies upstream allowlists before fetching container layers.</p>
@@ -409,9 +670,10 @@ Registry ──► Resolve ──► Evidence ──► OPA Decision ──► P
       </div>
     </section>
 
-    <!-- 7. OPA Policy Model -->
+    <!-- [05] OPA Policy Engine -->
     <section id="opa-policy">
       <div class="section-header">
+        <p class="eyebrow">[05] Policy Engine</p>
         <h2>Open Policy Agent (OPA) Policy-as-Code Engine</h2>
         <p>Scanners collect evidence. OPA decides acceptability.</p>
       </div>
@@ -446,9 +708,10 @@ Registry ──► Resolve ──► Evidence ──► OPA Decision ──► P
       </div>
     </section>
 
-    <!-- 8. Real Decision Output -->
+    <!-- [06] Standard Decision Payload -->
     <section id="decision-output">
       <div class="section-header">
+        <p class="eyebrow">[06] Decision Schema</p>
         <h2>OPA Standard Decision Payload</h2>
         <p>Machine-readable promotion decision predicate attached to Cosign attestations.</p>
       </div>
@@ -480,9 +743,10 @@ Registry ──► Resolve ──► Evidence ──► OPA Decision ──► P
       </div>
     </section>
 
-    <!-- 9. Control Matrix -->
+    <!-- [07] Control Matrix -->
     <section id="controls">
       <div class="section-header">
+        <p class="eyebrow">[07] Control Inventory</p>
         <h2>Authoritative Control Enforcement Matrix</h2>
         <p>Honest inventory of implemented controls, enforcement behavior, and production gaps.</p>
       </div>
@@ -580,9 +844,10 @@ Registry ──► Resolve ──► Evidence ──► OPA Decision ──► P
       </div>
     </section>
 
-    <!-- 10. Case Studies -->
+    <!-- [08] Case Studies -->
     <section id="incidents">
       <div class="section-header">
+        <p class="eyebrow">[08] Case Studies</p>
         <h2>Engineering Case Studies & Control Derivations</h2>
         <p>Real supply chain failures mapped to derived admission controls.</p>
       </div>
@@ -614,9 +879,10 @@ Registry ──► Resolve ──► Evidence ──► OPA Decision ──► P
       </div>
     </section>
 
-    <!-- 11. Operational Maturity Roadmap -->
+    <!-- [09] Operational Maturity -->
     <section id="maturity">
       <div class="section-header">
+        <p class="eyebrow">[09] Roadmap</p>
         <h2>Operational Maturity Roadmap (Levels 0–5)</h2>
         <p>Honest evaluation of ArtifactGate's current reference implementation level.</p>
       </div>
@@ -665,8 +931,19 @@ Registry ──► Resolve ──► Evidence ──► OPA Decision ──► P
       </div>
     </section>
 
-  </main>
+  </div>
 
+  <footer>
+    <div class="container">
+      <p>ArtifactGate — Enterprise Container Admission Architecture & Reference Implementation.</p>
+      <p style="margin-top: 0.5rem;">
+        <a href="https://github.com/llody9977/artifactgate" target="_blank">GitHub Repository</a> | 
+        <a href="docs/requirements.md">Requirements Spec</a> | 
+        <a href="docs/threat-model.md">Threat Model</a> | 
+        <a href="docs/policy-model.md">OPA Policy Engine</a> | 
+        <a href="docs/standards-mapping.md">Standards Mapping</a>
+      </p>
+    </div>
   </footer>
 
   <script>

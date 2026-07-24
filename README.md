@@ -1,5 +1,12 @@
 # ArtifactGate: Enterprise Third-Party Container Admission Architecture
 
+[![CI Scan](https://github.com/llody9977/artifactgate/actions/workflows/ci.yml/badge.svg)](https://github.com/llody9977/artifactgate/actions/workflows/ci.yml)
+[![Image Promotion](https://github.com/llody9977/artifactgate/actions/workflows/image-promotion.yml/badge.svg)](https://github.com/llody9977/artifactgate/actions/workflows/image-promotion.yml)
+[![Continuous Security Re-scan](https://github.com/llody9977/artifactgate/actions/workflows/rescan.yml/badge.svg)](https://github.com/llody9977/artifactgate/actions/workflows/rescan.yml)
+[![GitHub Pages](https://github.com/llody9977/artifactgate/actions/workflows/pages.yml/badge.svg)](https://github.com/llody9977/artifactgate/actions/workflows/pages.yml)
+[![CodeQL Analysis](https://github.com/llody9977/artifactgate/actions/workflows/codeql.yml/badge.svg)](https://github.com/llody9977/artifactgate/actions/workflows/codeql.yml)
+[![Weekly Version Check](https://github.com/llody9977/artifactgate/actions/workflows/weekly-version-check.yml/badge.svg)](https://github.com/llody9977/artifactgate/actions/workflows/weekly-version-check.yml)
+
 > [!NOTE]
 > **Reference Implementation — Not a Multi-Tenant Security Platform**
 > ArtifactGate is a reference architecture and implementation pattern for admitting third-party container images into enterprise infrastructure. Several controls require additional governance and infrastructure before production deployment.
