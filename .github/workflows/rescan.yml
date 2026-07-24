@@ -35,11 +35,10 @@ jobs:
           COSIGN_VERSION=v2.4.1
           curl --fail --show-error --location --retry 3 -o cosign "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign-linux-amd64"
           sudo install -m 755 cosign /usr/local/bin/cosign
-          # Install Trivy (Pinned v0.58.2)
-          TRIVY_VERSION=0.58.2
-          curl --fail --show-error --location --retry 3 -o trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
-          tar -xzf trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz trivy
-          sudo install -m 755 trivy /usr/local/bin/trivy
+          # Install Trivy
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo gpg --dearmor -o /usr/share/keyrings/trivy.gpg
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update -qq && sudo apt-get install -y trivy
 
       - name: Log in to GHCR
         uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
