@@ -106,7 +106,7 @@ def evaluate_and_generate_decision(evidence_file, output_file="promotion-decisio
             },
             "dastCompleted": os.path.exists("app-dast-result.json"),
             "sbomGenerated": os.path.exists("sbom.spdx.json") and os.path.exists("runner-sbom.spdx.json"),
-            "vexGenerated": os.path.exists("app-vex.json") and os.path.exists("runner-vex.json"),
+            "vexGenerated": os.path.exists("vex.json"),
             "evidenceManifestHash": hash_file("evidence-manifest.json") or "sha256:0000000000000000000000000000000000000000000000000000000000000000"
         },
         "waiver": {

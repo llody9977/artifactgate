@@ -179,7 +179,18 @@ jobs:
           docker pull n8nio/runners@$RUNNER_DIGEST
           docker tag n8nio/runners@$RUNNER_DIGEST n8nio/runners:$VERSION
 
+      - name: Report already-promoted no-op
+        if: steps.fetch-digest.outputs.skip_promotion == 'true'
+        run: |
+          {
+            echo "## ✅ Nothing to promote"
+            echo ""
+            echo "n8n \`${{ env.N8N_VERSION }}\` is already present in GHCR for both the application and task runner images."
+            echo "Scanning and promotion were skipped; this run is a clean no-op."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Check Upstream Vendor Signature (Cosign)
+        if: steps.fetch-digest.outputs.skip_promotion != 'true'
         run: |
           echo "" >> trivy-summary-meta.txt || true
           echo "### Upstream Vendor Signature Check" > vendor-sig-check.txt
@@ -217,6 +228,7 @@ jobs:
           fi
 
       - name: Scan Image for Secrets
+        if: steps.fetch-digest.outputs.skip_promotion != 'true'
         run: |
           T_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           trivy image \
@@ -240,6 +252,7 @@ jobs:
             '{schemaVersion:"1.0",status:$status,subject:{name:"n8n-runners",digest:$run_dig,platform:"linux/amd64",role:"runner"},scanner:{name:"trivy-secret",version:"0.58.2"},startedAt:$tstart,completedAt:$tend,workflowRunId:$runid,outputFile:"runner-secret-scan-output.json",outputFileHash:$hash,policyStatus:"PASS",scope:{scanners:["secret"]},errors:[]}' > runner-secret-scan-result.json
 
       - name: Scan Image for Malware (ClamAV)
+        if: steps.fetch-digest.outputs.skip_promotion != 'true'
         run: |
           T_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           echo "Exporting image to tarball for deep scanning..."
@@ -266,6 +279,7 @@ jobs:
 
 
       - name: Scan Image for License Compliance
+        if: steps.fetch-digest.outputs.skip_promotion != 'true'
         run: |
           T_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           trivy image \
@@ -288,6 +302,7 @@ jobs:
             '{schemaVersion:"1.0",status:$status,executionStatus:"COMPLETED",subject:{name:"n8n-runners",digest:$run_dig,platform:"linux/amd64",role:"runner"},scanner:{name:"trivy-license",version:"0.58.2"},startedAt:$tstart,completedAt:$tend,workflowRunId:$runid,outputFile:"runner-license-scan-output.json",outputFileHash:$hash,policyStatus:"PASS",scope:{scanners:["license"]},errors:[]}' > runner-license-scan-result.json
 
       - name: Scan for CVEs and Licenses (non-blocking report)
+        if: steps.fetch-digest.outputs.skip_promotion != 'true'
         run: |
           # Scan ALL severities and include licenses to evaluate in the policy engine
           trivy image \
@@ -310,6 +325,7 @@ jobs:
             n8nio/n8n:${{ env.N8N_VERSION }} || true
 
       - name: Run Tracee reachability smoke test & OWASP ZAP DAST scan
+        if: steps.fetch-digest.outputs.skip_promotion != 'true'
         run: |
           T_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           chmod +x .github/scripts/collect_package_files.sh .github/scripts/run_tracee_reachability.sh
@@ -353,7 +369,7 @@ jobs:
 
       - name: Upload Trivy scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a # v4
-        if: always() && hashFiles('trivy-results.sarif') != ''
+        if: always() && steps.fetch-digest.outputs.skip_promotion != 'true' && hashFiles('trivy-results.sarif') != ''
         with:
           sarif_file: 'trivy-results.sarif'
           category: "image-promotion-${{ env.N8N_VERSION }}"
@@ -362,6 +378,7 @@ jobs:
 
       - name: Enrich findings with KEV, EPSS, and age
         id: enrich-findings
+        if: steps.fetch-digest.outputs.skip_promotion != 'true'
         env:
           ZAP_REPORT_FILE: tracee-output/zap-report.json
         run: |
@@ -428,7 +445,7 @@ jobs:
           cat trivy-summary.txt
 
       - name: Generate Enhanced Job Summary
-        if: always()
+        if: always() && steps.fetch-digest.outputs.skip_promotion != 'true'
         run: |
           if [ ! -f trivy-report.json ]; then
             echo "## 🛡️ Security Scan Summary" >> $GITHUB_STEP_SUMMARY
@@ -441,7 +458,7 @@ jobs:
           fi
 
       - name: Generate OpenVEX Document
-        if: always()
+        if: always() && steps.fetch-digest.outputs.skip_promotion != 'true'
         run: |
           if [ -f trivy-report.json ]; then
             python3 .github/scripts/generate_vex.py trivy-report.json > vex.json
@@ -449,6 +466,7 @@ jobs:
           fi
 
       - name: Upload Scan Report
+        if: steps.fetch-digest.outputs.skip_promotion != 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: scan-report-${{ env.N8N_VERSION }}
@@ -473,6 +491,7 @@ jobs:
 
       - name: Gate — Require approval only for aged, KEV, or high-EPSS critical/high CVEs
         id: trivy-scan
+        if: steps.fetch-digest.outputs.skip_promotion != 'true'
         run: |
           MANUAL_REVIEW_COUNT="${{ steps.enrich-findings.outputs.manual_review_count }}"
           CRIT_HIGH_COUNT="${{ steps.enrich-findings.outputs.critical_high_count }}"
