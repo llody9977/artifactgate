@@ -43,8 +43,7 @@ class TestOPAPolicyIntegration(unittest.TestCase):
         with open("trivy-report.runner.json", "w") as f: json.dump({"Results": []}, f)
         with open("sbom.spdx.json", "w") as f: json.dump({"spdxVersion": "SPDX-2.3"}, f)
         with open("runner-sbom.spdx.json", "w") as f: json.dump({"spdxVersion": "SPDX-2.3"}, f)
-        with open("app-vex.json", "w") as f: json.dump({"@context": "openvex"}, f)
-        with open("runner-vex.json", "w") as f: json.dump({"@context": "openvex"}, f)
+        with open("vex.json", "w") as f: json.dump({"@context": "openvex"}, f)
 
     def tearDown(self):
         os.chdir(self.old_cwd)

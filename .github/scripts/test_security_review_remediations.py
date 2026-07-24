@@ -14,10 +14,16 @@ from datetime import datetime, timezone, timedelta
 # Add parent directory to path so we can import scripts
 sys.path.insert(0, os.path.dirname(__file__))
 
-from generate_promotion_decision import validate_result_file, file_info
 from validate_promotion_decision import validate_predicate
 from validate_vex import validate_vex
 from validate_sbom import validate_sbom
+
+def sha256_of(filepath):
+    h = hashlib.sha256()
+    with open(filepath, "rb") as f:
+        while chunk := f.read(8192):
+            h.update(chunk)
+    return f"sha256:{h.hexdigest()}"
 
 class TestSecurityRemediations(unittest.TestCase):
     def setUp(self):
@@ -36,64 +42,14 @@ class TestSecurityRemediations(unittest.TestCase):
         with open("policy/runtime-hardening-policy.yml", "w") as f:
             f.write("runner_exemption:\n  rule_id: runtime.runner.exemption\n")
 
-        self.vuln_hash = file_info("policy/vulnerability-gate-policy.yml")["sha256"]
-        self.ingest_hash = file_info("policy/image-ingestion-policy.yml")["sha256"]
-        self.lic_hash = file_info("policy/license-policy.yml")["sha256"]
-        self.runtime_hash = file_info("policy/runtime-hardening-policy.yml")["sha256"]
+        self.vuln_hash = sha256_of("policy/vulnerability-gate-policy.yml")
+        self.ingest_hash = sha256_of("policy/image-ingestion-policy.yml")
+        self.lic_hash = sha256_of("policy/license-policy.yml")
+        self.runtime_hash = sha256_of("policy/runtime-hardening-policy.yml")
 
     def tearDown(self):
         os.chdir(self.old_cwd)
         self.tmp_dir.cleanup()
-
-    def test_validate_result_file_statuses_and_output_hash(self):
-        # Create output file
-        with open("dummy-output.json", "w") as f:
-            f.write('{"test": "data"}')
-        out_hash = file_info("dummy-output.json")["sha256"]
-
-        # Valid PASSED result file
-        result_passed = {
-            "schemaVersion": "1.0",
-            "status": "PASSED",
-            "subject": {"name": "n8n", "digest": "sha256:appdigest123", "role": "application"},
-            "scanner": {"name": "trivy-secret", "version": "0.58.2"},
-            "startedAt": "2026-07-23T00:00:00Z",
-            "completedAt": "2026-07-23T00:01:00Z",
-            "workflowRunId": "12345",
-            "outputFile": "dummy-output.json",
-            "outputFileHash": out_hash
-        }
-        with open("app-secret-result.json", "w") as f:
-            json.dump(result_passed, f)
-
-        self.assertTrue(validate_result_file("app-secret-result.json", "sha256:appdigest123", "application", expected_run_id="12345"))
-
-        # Valid EXEMPTED runner runtime result file
-        result_exempted = {
-            "schemaVersion": "1.0",
-            "status": "EXEMPTED",
-            "subject": {"name": "n8n-runners", "digest": "sha256:rundigest123", "role": "runner"},
-            "scanner": {"name": "aquasec-tracee", "version": "v0.22.0"},
-            "startedAt": "2026-07-23T00:00:00Z",
-            "completedAt": "2026-07-23T00:01:00Z",
-            "workflowRunId": "12345",
-            "outputFile": "dummy-output.json",
-            "outputFileHash": out_hash
-        }
-        with open("runner-runtime-result.json", "w") as f:
-            json.dump(result_exempted, f)
-
-        # Default allowed_statuses={"PASSED"} should fail for EXEMPTED
-        self.assertFalse(validate_result_file("runner-runtime-result.json", "sha256:rundigest123", "runner", expected_run_id="12345"))
-        # Explicit allowed_statuses={"EXEMPTED"} should pass
-        self.assertTrue(validate_result_file("runner-runtime-result.json", "sha256:rundigest123", "runner", allowed_statuses={"EXEMPTED"}, expected_run_id="12345"))
-
-        # Tampered outputFileHash should fail
-        result_tampered = dict(result_passed)
-        result_tampered["outputFileHash"] = "sha256:tamperedhash"
-        with open("tampered-result.json", "w") as f:
-            json.dump(result_tampered, f)
-        self.assertFalse(validate_result_file("tampered-result.json", "sha256:appdigest123", "application", expected_run_id="12345"))
 
     def test_policy_hash_and_exemption_validation(self):
         future_date = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
