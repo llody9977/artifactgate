@@ -11,25 +11,24 @@
   <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg-dark: #080c14;
-      --bg-page: #0a0e1a;
-      --bg-panel: #111726;
-      --bg-panel-hover: #161e31;
-      --bg-card: #141b2d;
-      --border-subtle: #1e283d;
-      --border-focus: #3b82f6;
-      --border-accent: rgba(59, 130, 246, 0.35);
-      --text-heading: #f8fafc;
-      --text-body: #cbd5e1;
-      --text-muted: #8492a6;
+      --bg-page: #f4f6f8;
+      --bg-panel: #ffffff;
+      --bg-panel-hover: #f8fafc;
+      --bg-card: #ffffff;
+      --border-subtle: #d7dee7;
+      --border-focus: #2457d6;
+      --border-accent: #cbd5e1;
+      --text-heading: #111827;
+      --text-body: #334155;
+      --text-muted: #475569;
       --text-dim: #64748b;
-      --color-blue: #3b82f6;
-      --color-cyan: #38bdf8;
-      --color-emerald: #10b981;
-      --color-rose: #f43f5e;
-      --color-amber: #f59e0b;
-      --color-indigo: #6366f1;
-      --color-teal: #14b8a6;
+      --color-blue: #2457d6;
+      --color-cyan: #0284c7;
+      --color-emerald: #059669;
+      --color-rose: #be123c;
+      --color-amber: #b45309;
+      --color-indigo: #4338ca;
+      --color-teal: #0f766e;
       --font-heading: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       --font-body: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       --font-mono: 'Fira Code', monospace;
@@ -48,13 +47,12 @@
     /* Container */
     .container { max-width: 1240px; margin: 0 auto; padding: 0 1.5rem; }
 
-    /* VulnSignal Topbar Header */
+    /* VulnSignal Topbar Header (Dark Header Topbar) */
     .topbar {
       position: sticky;
       top: 0;
-      background: rgba(9, 13, 22, 0.88);
-      backdrop-filter: blur(16px);
-      border-bottom: 1px solid var(--border-subtle);
+      background: #0b0f19;
+      border-bottom: 1px solid #1e293b;
       z-index: 1000;
       padding: 0.85rem 0;
     }
@@ -69,7 +67,7 @@
       align-items: center;
       gap: 0.75rem;
       text-decoration: none;
-      color: var(--text-heading);
+      color: #ffffff;
     }
     .brand__mark {
       display: grid;
@@ -79,24 +77,25 @@
       height: 22px;
     }
     .brand__mark i {
-      background: var(--color-cyan);
+      background: #38bdf8;
       border-radius: 1px;
       opacity: 0.85;
     }
     .brand__mark i:nth-child(2), .brand__mark i:nth-child(4), .brand__mark i:nth-child(9) {
-      background: var(--color-indigo);
+      background: #818cf8;
     }
     .brand strong {
       font-family: var(--font-heading);
       font-size: 1.25rem;
       font-weight: 800;
       letter-spacing: -0.02em;
+      color: #ffffff;
     }
     .brand small {
       display: block;
       font-family: var(--font-mono);
       font-size: 0.65rem;
-      color: var(--color-cyan);
+      color: #38bdf8;
       letter-spacing: 0.08em;
       text-transform: uppercase;
     }
@@ -106,21 +105,21 @@
       list-style: none;
     }
     .nav-links a {
-      color: var(--text-muted);
+      color: #94a3b8;
       text-decoration: none;
       font-size: 0.875rem;
       font-weight: 500;
       font-family: var(--font-mono);
       transition: color 0.15s;
     }
-    .nav-links a:hover { color: var(--color-cyan); }
+    .nav-links a:hover { color: #38bdf8; }
 
     .sync-state {
       display: flex;
       align-items: center;
       gap: 0.6rem;
-      background: rgba(15, 23, 42, 0.8);
-      border: 1px solid var(--border-subtle);
+      background: #161e2e;
+      border: 1px solid #28354d;
       padding: 0.4rem 0.85rem;
       border-radius: 9999px;
       font-family: var(--font-mono);
@@ -129,16 +128,16 @@
     .sync-state__dot {
       width: 8px;
       height: 8px;
-      background: var(--color-emerald);
+      background: #10b981;
       border-radius: 50%;
-      box-shadow: 0 0 8px var(--color-emerald);
+      box-shadow: 0 0 8px #10b981;
       animation: pulse 2s infinite;
     }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-    .sync-state strong { color: var(--text-heading); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; }
-    .sync-state small { color: var(--text-muted); }
+    .sync-state strong { color: #f8fafc; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .sync-state small { color: #94a3b8; }
 
-    /* Badges */
+    /* Badges for Light Theme */
     .badge {
       display: inline-flex;
       align-items: center;
@@ -150,17 +149,17 @@
       text-transform: uppercase;
       letter-spacing: 0.04em;
     }
-    .badge-indigo { background: rgba(99, 102, 241, 0.15); color: #a5b4fc; border: 1px solid rgba(99, 102, 241, 0.3); }
-    .badge-emerald { background: rgba(16, 185, 129, 0.15); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.3); }
-    .badge-amber { background: rgba(245, 158, 11, 0.15); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.3); }
-    .badge-rose { background: rgba(244, 63, 94, 0.15); color: #fda4af; border: 1px solid rgba(244, 63, 94, 0.3); }
-    .badge-cyan { background: rgba(56, 189, 248, 0.15); color: #7dd3fc; border: 1px solid rgba(56, 189, 248, 0.3); }
+    .badge-indigo { background: #eef2ff; color: #4338ca; border: 1px solid #c7d2fe; }
+    .badge-emerald { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+    .badge-amber { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
+    .badge-rose { background: #fff1f2; color: #be123c; border: 1px solid #fecdd3; }
+    .badge-cyan { background: #f0f9ff; color: #0369a1; border: 1px solid #bae6fd; }
 
-    /* VulnSignal Banner */
+    /* Warning Banner for Light Theme */
     .banner-warning {
-      background: rgba(245, 158, 11, 0.08);
-      border: 1px solid rgba(245, 158, 11, 0.25);
-      color: #fcd34d;
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      color: #92400e;
       padding: 0.75rem 1.25rem;
       border-radius: 8px;
       font-size: 0.875rem;
@@ -170,13 +169,13 @@
       gap: 0.75rem;
     }
 
-    /* VulnSignal Hero Layout */
+    /* Hero Styling */
     .hero { padding: 3rem 0 2.5rem; }
     .hero__copy .kicker {
       font-family: var(--font-mono);
       font-size: 0.8rem;
       font-weight: 600;
-      color: var(--color-cyan);
+      color: var(--color-blue);
       letter-spacing: 0.1em;
       text-transform: uppercase;
       margin-bottom: 0.75rem;
@@ -192,9 +191,7 @@
     }
     .hero__copy h1 em {
       font-style: normal;
-      background: linear-gradient(135deg, #38bdf8, #818cf8);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+      color: var(--color-blue);
     }
     .hero__copy p {
       font-size: 1.15rem;
@@ -203,7 +200,7 @@
       margin-bottom: 2rem;
     }
 
-    /* VulnSignal Hero Status Grid */
+    /* Hero Status Grid */
     .hero__status {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -215,6 +212,7 @@
       border: 1px solid var(--border-subtle);
       padding: 1rem 1.25rem;
       border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
     .hero__status span {
       display: block;
@@ -230,20 +228,21 @@
       font-family: var(--font-mono);
     }
 
-    /* VulnSignal Source Snapshot Strip */
+    /* Source Snapshot Strip */
     .source-snapshot {
       background: var(--bg-panel);
       border: 1px solid var(--border-subtle);
       border-radius: 10px;
       padding: 1.25rem;
       margin-bottom: 3rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
     .source-snapshot strong {
       display: block;
       font-family: var(--font-mono);
       font-size: 0.75rem;
       text-transform: uppercase;
-      color: var(--color-cyan);
+      color: var(--color-blue);
       letter-spacing: 0.05em;
       margin-bottom: 0.85rem;
     }
@@ -253,7 +252,7 @@
       gap: 0.75rem;
     }
     .source-item {
-      background: var(--bg-card);
+      background: #f8fafc;
       border: 1px solid var(--border-subtle);
       padding: 0.65rem 0.85rem;
       border-radius: 6px;
@@ -267,7 +266,7 @@
     .eyebrow {
       font-family: var(--font-mono);
       font-size: 0.75rem;
-      color: var(--color-cyan);
+      color: var(--color-blue);
       letter-spacing: 0.08em;
       text-transform: uppercase;
       margin-bottom: 0.5rem;
@@ -291,11 +290,12 @@
       border: 1px solid var(--border-subtle);
       border-radius: 10px;
       padding: 1.5rem;
-      transition: border-color 0.2s, background-color 0.2s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+      transition: border-color 0.2s, box-shadow 0.2s;
     }
     .card:hover {
       border-color: var(--border-focus);
-      background: var(--bg-panel-hover);
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.08);
     }
     .card h3 {
       font-family: var(--font-heading);
@@ -306,61 +306,45 @@
     }
     .card p { color: var(--text-muted); font-size: 0.925rem; }
 
-    /* Metric Indicator Cells (VulnSignal Style) */
-    .indicator-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap: 1rem;
-      margin-bottom: 2rem;
-    }
-    .indicator-cell {
-      background: var(--bg-panel);
-      border: 1px solid var(--border-subtle);
-      border-radius: 10px;
-      padding: 1.25rem;
-    }
-    .indicator-cell__label { font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; }
-    .indicator-cell__value { font-family: var(--font-mono); font-size: 2rem; font-weight: 700; color: var(--text-heading); margin: 0.25rem 0; }
-    .indicator-cell p { font-size: 0.8rem; color: var(--text-muted); }
-
-    /* Tables (VulnSignal Style) */
+    /* Tables */
     .table-wrapper {
       width: 100%;
       overflow-x: auto;
       background: var(--bg-panel);
       border: 1px solid var(--border-subtle);
       border-radius: 10px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
     }
     table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.875rem; }
     th {
-      background: rgba(255, 255, 255, 0.02);
+      background: #f8fafc;
       color: var(--text-heading);
       font-family: var(--font-mono);
       font-size: 0.75rem;
       text-transform: uppercase;
       padding: 0.85rem 1rem;
-      border-bottom: 1px solid var(--border-subtle);
+      border-bottom: 2px solid var(--border-subtle);
     }
     td { padding: 0.85rem 1rem; border-bottom: 1px solid var(--border-subtle); color: var(--text-body); }
     tr:last-child td { border-bottom: none; }
-    tr:hover td { background: rgba(255, 255, 255, 0.015); }
+    tr:hover td { background: #f8fafc; }
 
     /* Diagram & Code */
     .diagram-box {
-      background: #050810;
-      border: 1px solid var(--border-subtle);
+      background: #0f172a;
+      border: 1px solid #1e293b;
       border-radius: 10px;
       padding: 1.75rem;
       font-family: var(--font-mono);
       font-size: 0.85rem;
-      color: var(--color-cyan);
+      color: #38bdf8;
       overflow-x: auto;
       white-space: pre;
       line-height: 1.4;
     }
     .code-block {
-      background: #050810;
-      border: 1px solid var(--border-subtle);
+      background: #0f172a;
+      border: 1px solid #1e293b;
       border-radius: 10px;
       padding: 1.25rem;
       font-family: var(--font-mono);
@@ -376,9 +360,10 @@
       color: var(--text-dim);
       font-size: 0.85rem;
       text-align: center;
+      background: #ffffff;
     }
-    footer a { color: var(--text-muted); text-decoration: none; font-family: var(--font-mono); }
-    footer a:hover { color: var(--color-cyan); }
+    footer a { color: var(--color-blue); text-decoration: none; font-family: var(--font-mono); }
+    footer a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
