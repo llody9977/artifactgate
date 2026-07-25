@@ -275,7 +275,12 @@ jobs:
         uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a # v4
         with:
           sarif_file: "sarifs/rescan-${{ steps.rescan.outputs.version }}.sarif"
-          category: "rescan-${{ steps.rescan.outputs.version }}"
+          # Stable category: code scanning uses category to distinguish analyses of
+          # the same commit, not to version a subject over time. A per-version value
+          # spawns a new configuration each run that then goes permanently stale and
+          # trips the tool-status warning. One stable category keeps a single, always-
+          # current configuration (and lets alerts close when a finding is remediated).
+          category: "trivy-rescan"
 
       - name: Upload SARIFs as internal artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

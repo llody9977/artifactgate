@@ -380,7 +380,10 @@ jobs:
         if: always() && steps.fetch-digest.outputs.skip_promotion != 'true' && hashFiles('trivy-results.sarif') != ''
         with:
           sarif_file: 'trivy-results.sarif'
-          category: "image-promotion-${{ env.N8N_VERSION }}"
+          # Stable category — a per-version value spawns a new code-scanning
+          # configuration each run that then goes permanently stale (tool-status
+          # warning). One stable category keeps a single, always-current configuration.
+          category: "trivy-image-promotion"
           ref: refs/heads/main
           sha: ${{ github.sha }}
 
