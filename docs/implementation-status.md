@@ -20,7 +20,6 @@ This document provides an authoritative control status inventory and an operatio
 | **Upstream Publisher Signature** | Implemented | Warning | Evaluates vendor signatures when present; recorded as accepted identity gap when missing |
 | **Promotion Attestation** | Implemented | Blocking at Installer | Keylessly signs and attaches `promotiondecision` predicates to promoted images in GHCR |
 | **Deployment Admission Verification** | Implemented | Blocking (`install.sh`) | `install.sh` verifies Cosign signatures, SLSA provenance, OpenVEX, and 4-digest pairing before startup |
-| **Kubernetes Admission Controller** | Not Implemented | None | Production adoption requires a Kubernetes admission controller (e.g. Kyverno / Sigstore policy-controller) |
 | **Scheduled Re-scanning** | Implemented | Issue Creation | `rescan.yml` re-scans promoted images weekly; creates GitHub issues on vulnerability decay |
 | **Automated Revocation** | Not Implemented | None | Automated runtime image eviction or registry tombstoning is not implemented |
 

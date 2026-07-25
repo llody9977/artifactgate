@@ -814,12 +814,6 @@ Registry ──► Resolve ──► Evidence ──► OPA Decision ──► P
               <td>`install.sh` verifies Cosign signatures, SLSA provenance, OpenVEX, and 4-digest pairing.</td>
             </tr>
             <tr>
-              <td><strong>K8s Admission Controller</strong></td>
-              <td><span class="badge badge-rose">Not Implemented</span></td>
-              <td>None</td>
-              <td>Production adoption requires a Kubernetes admission controller (Kyverno / Sigstore policy-controller).</td>
-            </tr>
-            <tr>
               <td><strong>Scheduled Re-scanning</strong></td>
               <td><span class="badge badge-emerald">Implemented</span></td>
               <td>Issue Creation</td>
@@ -840,25 +834,25 @@ Registry ──► Resolve ──► Evidence ──► OPA Decision ──► P
       <div class="grid-2">
         <div class="card">
           <span class="badge badge-rose" style="margin-bottom:0.75rem;">Case 1</span>
-          <h3>`tj-actions/changed-files` (Action Compromise)</h3>
+          <h3><a href="https://github.com/llody9977/artifactgate/blob/main/docs/incident-case-studies.md#case-study-1-tj-actionschanged-files-cicd-action-compromise" target="_blank" rel="noopener">`tj-actions/changed-files` (Action Compromise)</a></h3>
           <p><strong>Failure Mode</strong>: Mutable release tags (`:v40`) were hijacked upstream to execute malicious secret exfiltration code.</p>
           <p><strong>ArtifactGate Control</strong>: All workflow actions and container intake resolve strictly to immutable SHA-256 commit digests.</p>
         </div>
         <div class="card">
           <span class="badge badge-rose" style="margin-bottom:0.75rem;">Case 2</span>
-          <h3>XZ Utils Backdoor (Targeted Logic Bomb)</h3>
+          <h3><a href="https://github.com/llody9977/artifactgate/blob/main/docs/incident-case-studies.md#case-study-2-xz-utils-backdoor-targeted-maintainer--build-compromise" target="_blank" rel="noopener">XZ Utils Backdoor (Targeted Logic Bomb)</a></h3>
           <p><strong>Failure Mode</strong>: Trusted maintainer inserted build-time backdoor into tarball sources that bypassed static code review.</p>
           <p><strong>ArtifactGate Control</strong>: Tracee kernel eBPF dynamic syscall observation monitors unexpected binary execution in quarantine.</p>
         </div>
         <div class="card">
           <span class="badge badge-rose" style="margin-bottom:0.75rem;">Case 3</span>
-          <h3>SolarWinds (Vendor Build Compromise)</h3>
+          <h3><a href="https://github.com/llody9977/artifactgate/blob/main/docs/incident-case-studies.md#case-study-3-solarwinds-orion-vendor-build-pipeline-compromise" target="_blank" rel="noopener">SolarWinds (Vendor Build Compromise)</a></h3>
           <p><strong>Failure Mode</strong>: Valid vendor code-signing certificates signed malicious build updates (`SUNBURST`).</p>
           <p><strong>ArtifactGate Control</strong>: Independently evaluates security evidence and attests downstream promotion predicates (`promotiondecision`).</p>
         </div>
         <div class="card">
           <span class="badge badge-rose" style="margin-bottom:0.75rem;">Case 4</span>
-          <h3>Equifax Apache Struts (Remediation SLA Breakdown)</h3>
+          <h3><a href="https://github.com/llody9977/artifactgate/blob/main/docs/incident-case-studies.md#case-study-4-equifax-apache-struts-vulnerability-management-sla-breakdown" target="_blank" rel="noopener">Equifax Apache Struts (Remediation SLA Breakdown)</a></h3>
           <p><strong>Failure Mode</strong>: Known CVE-2017-5638 patch existed but unpatched application remained exposed for months.</p>
           <p><strong>ArtifactGate Control</strong>: OpenVEX waivers enforce accountable risk owners, expiration dates (`expires_on`), and active CVE coverage validation.</p>
         </div>
